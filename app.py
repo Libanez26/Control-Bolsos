@@ -150,83 +150,86 @@ else:
                         col3.metric("Pozo a Recibir", f"{simbolo}{pozo_total:,.2f}")
                         col4.metric("Frecuencia", bolso['frecuencia'])
                         
-                        # Edición general y eliminación dentro del popover
-                        with st.popover("✏️ Editar configuración y fechas de este Bolso"):
-                            nuevo_nombre = st.text_input("Nombre del Bolso", value=bolso['nombre'], key=f"edit_nom_{bolso_id}")
-                            nuevo_monto = st.number_input("Monto por Cuota", min_value=0.0, format="%.2f", value=monto_cuota, key=f"edit_mont_{bolso_id}")
-                            
-                            idx_moneda = ["Divisa", "Bolívares (Bs)"].index(tipo_moneda) if tipo_moneda in ["Divisa", "Bolívares (Bs)"] else 0
-                            nueva_moneda = st.selectbox("Tipo de Moneda", ["Divisa", "Bolívares (Bs)"], index=idx_moneda, key=f"edit_moneda_{bolso_id}")
-                            
-                            nueva_tasa = "N/A"
-                            nuevo_detalle_tasa = ""
-                            
-                            if nueva_moneda == "Bolívares (Bs)":
-                                opciones_tasas = ["BCV (Dólar)", "BCV (Euro)", "Otra"]
-                                idx_tasa = opciones_tasas.index(tipo_tasa) if tipo_tasa in opciones_tasas else 0
-                                nueva_tasa = st.selectbox("¿A qué tasa?", opciones_tasas, index=idx_tasa, key=f"edit_tasa_{bolso_id}")
+                        st.markdown("---")
+                        
+                        col_accion_1, col_accion_2 = st.columns([1, 1])
+                        
+                        with col_accion_1:
+                            with st.popover("✏️ Editar configuración y fechas de este Bolso"):
+                                nuevo_nombre = st.text_input("Nombre del Bolso", value=bolso['nombre'], key=f"edit_nom_{bolso_id}")
+                                nuevo_monto = st.number_input("Monto por Cuota", min_value=0.0, format="%.2f", value=monto_cuota, key=f"edit_mont_{bolso_id}")
                                 
-                                if nueva_tasa == "Otra":
-                                    nuevo_detalle_tasa = st.text_input("Especifique cuál tasa", value=otra_tasa, key=f"edit_otra_{bolso_id}")
-                            
-                            idx_freq = ["Quincenal", "Semanal", "Mensual"].index(bolso['frecuencia']) if bolso['frecuencia'] in ["Quincenal", "Semanal", "Mensual"] else 0
-                            nueva_freq = st.selectbox("Frecuencia", ["Quincenal", "Semanal", "Mensual"], index=idx_freq, key=f"edit_freq_{bolso_id}")
-                            nuevo_puestos = st.number_input("Número Total de Puestos", min_value=1, value=total_puestos, step=1, key=f"edit_puest_{bolso_id}")
-                            
-                            st.markdown("---")
-                            st.markdown("📅 **Selecciona la fecha para cada Puesto:**")
-                            
-                            fechas_editadas = []
-                            for p in range(1, int(nuevo_puestos) + 1):
-                                fecha_default = datetime.date.today()
-                                if p - 1 < len(fechas_bolso):
+                                idx_moneda = ["Divisa", "Bolívares (Bs)"].index(tipo_moneda) if tipo_moneda in ["Divisa", "Bolívares (Bs)"] else 0
+                                nueva_moneda = st.selectbox("Tipo de Moneda", ["Divisa", "Bolívares (Bs)"], index=idx_moneda, key=f"edit_moneda_{bolso_id}")
+                                
+                                nueva_tasa = "N/A"
+                                nuevo_detalle_tasa = ""
+                                
+                                if nueva_moneda == "Bolívares (Bs)":
+                                    opciones_tasas = ["BCV (Dólar)", "BCV (Euro)", "Otra"]
+                                    idx_tasa = opciones_tasas.index(tipo_tasa) if tipo_tasa in opciones_tasas else 0
+                                    nueva_tasa = st.selectbox("¿A qué tasa?", opciones_tasas, index=idx_tasa, key=f"edit_tasa_{bolso_id}")
+                                    
+                                    if nueva_tasa == "Otra":
+                                        nuevo_detalle_tasa = st.text_input("Especifique cuál tasa", value=otra_tasa, key=f"edit_otra_{bolso_id}")
+                                
+                                idx_freq = ["Quincenal", "Semanal", "Mensual"].index(bolso['frecuencia']) if bolso['frecuencia'] in ["Quincenal", "Semanal", "Mensual"] else 0
+                                nueva_freq = st.selectbox("Frecuencia", ["Quincenal", "Semanal", "Mensual"], index=idx_freq, key=f"edit_freq_{bolso_id}")
+                                nuevo_puestos = st.number_input("Número Total de Puestos", min_value=1, value=total_puestos, step=1, key=f"edit_puest_{bolso_id}")
+                                
+                                st.markdown("---")
+                                st.markdown("📅 **Selecciona la fecha para cada Puesto:**")
+                                
+                                fechas_editadas = []
+                                for p in range(1, int(nuevo_puestos) + 1):
+                                    fecha_default = datetime.date.today()
+                                    if p - 1 < len(fechas_bolso):
+                                        try:
+                                            partes = fechas_bolso[p-1].split("-")
+                                            if len(partes) == 2:
+                                                meses = {"ene":1, "feb":2, "mar":3, "abr":4, "may":5, "jun":6, "jul":7, "ago":8, "sept":9, "oct":10, "nov":11, "dic":12}
+                                                m_num = meses.get(partes[1].lower(), 1)
+                                                fecha_default = datetime.date(datetime.date.today().year, m_num, int(partes[0]))
+                                        except:
+                                            pass
+                                            
+                                    f_sel = st.date_input(f"Fecha para Puesto {p}", value=fecha_default, key=f"edit_date_{bolso_id}_{p}")
+                                    fechas_editadas.append(f_sel.strftime("%d-%b"))
+                                
+                                if st.button("Guardar Cambios Generales", key=f"btn_edit_gen_{bolso_id}", type="primary"):
                                     try:
-                                        partes = fechas_bolso[p-1].split("-")
-                                        if len(partes) == 2:
-                                            meses = {"ene":1, "feb":2, "mar":3, "abr":4, "may":5, "jun":6, "jul":7, "ago":8, "sept":9, "oct":10, "nov":11, "dic":12}
-                                            m_num = meses.get(partes[1].lower(), 1)
-                                            fecha_default = datetime.date(datetime.date.today().year, m_num, int(partes[0]))
-                                    except:
-                                        pass
-                                        
-                                f_sel = st.date_input(f"Fecha para Puesto {p}", value=fecha_default, key=f"edit_date_{bolso_id}_{p}")
-                                fechas_editadas.append(f_sel.strftime("%d-%b"))
-                            
-                            if st.button("Guardar Cambios Generales", key=f"btn_edit_gen_{bolso_id}", type="primary"):
-                                try:
-                                    nuevas_fechas_str = ", ".join(fechas_editadas)
-                                    supabase.table("bolsos").update({
-                                        "nombre": nuevo_nombre,
-                                        "monto_cuota": nuevo_monto,
-                                        "tipo_moneda": nueva_moneda,
-                                        "tipo_tasa": nueva_tasa,
-                                        "otra_tasa_detalle": nuevo_detalle_tasa,
-                                        "frecuencia": nueva_freq,
-                                        "total_puestos": int(nuevo_puestos),
-                                        "fechas_cronograma": nuevas_fechas_str
-                                    }).eq("id", bolso_id).execute()
-                                    st.success("¡Configuración actualizada con éxito!")
-                                    st.rerun()
-                                except Exception as e:
-                                    st.error(f"Error al actualizar: {e}")
-                            
-                            st.markdown("---")
-                            st.markdown("🗑️ **Zona de Eliminación**")
-                            confirmar_borrado_propietario = st.checkbox("Confirmo que deseo eliminar este bolso permanentemente", key=f"chk_del_{bolso_id}")
-                            if st.button("Eliminar este Bolso", key=f"btn_delete_propietario_{bolso_id}"):
-                                if confirmar_borrado_propietario:
-                                    try:
-                                        # Eliminar registros dependientes
-                                        supabase.table("detalles_bolso").delete().eq("bolso_id", bolso_id).execute()
-                                        supabase.table("compartidos").delete().eq("bolso_id", bolso_id).execute()
-                                        # Eliminar bolso principal
-                                        supabase.table("bolsos").delete().eq("id", bolso_id).execute()
-                                        st.success("¡Bolso eliminado con éxito!")
+                                        nuevas_fechas_str = ", ".join(fechas_editadas)
+                                        supabase.table("bolsos").update({
+                                            "nombre": nuevo_nombre,
+                                            "monto_cuota": nuevo_monto,
+                                            "tipo_moneda": nueva_moneda,
+                                            "tipo_tasa": nueva_tasa,
+                                            "otra_tasa_detalle": nuevo_detalle_tasa,
+                                            "frecuencia": nueva_freq,
+                                            "total_puestos": int(nuevo_puestos),
+                                            "fechas_cronograma": nuevas_fechas_str
+                                        }).eq("id", bolso_id).execute()
+                                        st.success("¡Configuración actualizada con éxito!")
                                         st.rerun()
                                     except Exception as e:
-                                        st.error(f"Error al eliminar el bolso: {e}")
-                                else:
-                                    st.error("Debes marcar la casilla de confirmación para eliminar.")
+                                        st.error(f"Error al actualizar: {e}")
+
+                        with col_accion_2:
+                            with st.popover("🗑️ Eliminar este Bolso"):
+                                st.error("⚠️ Esta acción borrará el bolso y todos sus datos de forma permanente.")
+                                confirmar_borrado_propietario = st.checkbox("Confirmo que deseo eliminar este bolso permanentemente", key=f"chk_del_{bolso_id}")
+                                if st.button("Eliminar Bolso Definitivamente", key=f"btn_delete_propietario_{bolso_id}", type="primary"):
+                                    if confirmar_borrado_propietario:
+                                        try:
+                                            supabase.table("detalles_bolso").delete().eq("bolso_id", bolso_id).execute()
+                                            supabase.table("compartidos").delete().eq("bolso_id", bolso_id).execute()
+                                            supabase.table("bolsos").delete().eq("id", bolso_id).execute()
+                                            st.success("¡Bolso eliminado con éxito!")
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Error al eliminar el bolso: {e}")
+                                    else:
+                                        st.error("Debes marcar la casilla de confirmación.")
                         
                         st.markdown("---")
                         st.markdown("### 🗓️ Cronograma, Participantes y Estados")
@@ -423,12 +426,13 @@ else:
                             col3.metric("Pozo Total", f"{simbolo}{pozo_total:,.2f}")
                             col4.metric("Frecuencia", bolso['frecuencia'])
                             
-                            # Botón para salir/remover bolso compartido
-                            with st.popover("⚙️ Opciones de Colaborador"):
-                                st.markdown("🗑️ **Dejar de ver este bolso**")
+                            st.markdown("---")
+                            
+                            with st.popover("⚙️ Salir / Dejar de ver este Bolso"):
+                                st.markdown("🗑️ **Remover de tus compartidos**")
                                 st.write("Si ya no deseas participar o ver este bolso compartido, puedes removerlo de tu lista.")
                                 chk_salir = st.checkbox("Confirmo que deseo salir de este bolso compartido", key=f"chk_salir_{b_id}")
-                                if st.button("Remover de mis compartidos", key=f"btn_salir_{b_id}"):
+                                if st.button("Remover de mis compartidos", key=f"btn_salir_{b_id}", type="primary"):
                                     if chk_salir:
                                         try:
                                             supabase.table("compartidos").delete().eq("bolso_id", b_id).eq("email_colaborador", email_usuario).execute()
@@ -467,13 +471,16 @@ else:
 
                                 opciones_estado = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Pagado ({email_corto})"]
                                 
+                                # CORRECCIÓN CLAVE AQUÍ: Se asegura que si nivel_acceso == "Lectura" se bloquee, y si es "Editor" se permita editar
+                                es_solo_lectura = (nivel_acceso == "Lectura")
+                                
                                 column_config_dict = {
                                     "Nro. Puesto": st.column_config.NumberColumn("Nro.", disabled=True, width="small"),
-                                    "Participante": st.column_config.TextColumn("Participante", disabled=(nivel_acceso == "Lectura"), width="medium"),
+                                    "Participante": st.column_config.TextColumn("Participante", disabled=es_solo_lectura, width="medium"),
                                 }
                                 for fecha in fechas_bolso:
                                     column_config_dict[fecha] = st.column_config.SelectboxColumn(
-                                        label=fecha, options=opciones_estado, required=True, width="medium", disabled=(nivel_acceso == "Lectura")
+                                        label=fecha, options=opciones_estado, required=True, width="medium", disabled=es_solo_lectura
                                     )
 
                                 df_editado = st.data_editor(df_matriz, column_config=column_config_dict, use_container_width=True, hide_index=True, key=f"editor_shared_{b_id}_{idx}")
