@@ -12,6 +12,10 @@ st.set_page_config(
     layout="wide",
 )
 
+# --- GESTOR DE COOKIES ---
+cookie_manager = st_cookie.CookieManager()
+device_token_cookie = cookie_manager.get(cookie="dispositivo_confiable_token_bolsos")
+
 # --- INICIALIZAR SUPABASE ---
 @st.cache_resource
 def init_supabase() -> Client:
@@ -28,13 +32,8 @@ supabase = init_supabase()
 if "usuario" not in st.session_state:
     st.session_state["usuario"] = None
 
-# --- GESTOR DE COOKIES Y RECUPERACIÓN AUTOMÁTICA ---
-cookie_manager = st_cookie.CookieManager()
-
-# Si el usuario no está logueado, intentamos recuperar la cookie
+# --- RECUPERAR SESIÓN INDEPENDIENTE POR DISPOSITIVO (ESTILO EXACTO NEXUS) ---
 if st.session_state["usuario"] is None:
-    device_token_cookie = cookie_manager.get(cookie="dispositivo_confiable_token_bolsos")
-    
     if device_token_cookie:
         try:
             verificacion_disp = (
@@ -43,7 +42,6 @@ if st.session_state["usuario"] is None:
                 .eq("device_token", device_token_cookie)
                 .execute()
             )
-            
             if verificacion_disp.data and len(verificacion_disp.data) > 0:
                 user_id_asociado = verificacion_disp.data[0]["user_id"]
                 correo_asociado = verificacion_disp.data[0].get("email", "usuario@bolsos.com")
@@ -55,74 +53,76 @@ if st.session_state["usuario"] is None:
 
                 st.session_state["usuario"] = UserDummy(user_id_asociado, correo_asociado)
                 st.rerun()
-            else:
-                cookie_manager.delete("dispositivo_confiable_token_bolsos")
         except Exception:
             pass
-    else:
-        # Pequeña pausa de sincronización para asegurar que el componente de cookies responde en la primera carga
-        if "cookie_checked" not in st.session_state:
-            st.session_state["cookie_checked"] = True
-            st.rerun()
 
 # --- PANTALLA DE LOGIN / REGISTRO ---
 if st.session_state["usuario"] is None:
     st.title("💰 App de Gestión de Bolsos (Sanes)")
-    st.markdown("Por favor, inicia sesión o regístrate para continuar.")
-    
-    modo = st.radio("Acción", ["Iniciar Sesión", "Registrarse"], horizontal=True, key="main_modo_auth")
-    email = st.text_input("Correo electrónico", key="main_email_auth")
-    password = st.text_input("Contraseña", type="password", key="main_pass_auth")
-    
-    recordar_dispositivo = st.checkbox(
-        "Confiar en este dispositivo (Mantener sesión abierta solo aquí)",
-        value=True,
-        key="main_chk_dispositivo"
-    )
-    
-    if modo == "Iniciar Sesión":
-        if st.button("Ingresar", type="primary", key="btn_ingresar_auth"):
-            try:
-                res = supabase.auth.sign_in_with_password({"email": email.strip(), "password": password.strip()})
-                if res.user:
-                    st.session_state["usuario"] = res.user
-                    
-                    if recordar_dispositivo:
-                        nuevo_token = str(uuid.uuid4())
-                        cookie_manager.set(
-                            "dispositivo_confiable_token_bolsos", nuevo_token, max_age=31536000
-                        )
-                        try:
+    st.subheader("Inicia sesión y marca la casilla si deseas recordar este dispositivo.")
+
+    tab_login, tab_registro = st.tabs(["🔑 Iniciar Sesión", "📝 Registrarse"])
+
+    with tab_login:
+        with st.form("form_login_bolsos"):
+            email_login = st.text_input("Correo electrónico")
+            pass_login = st.text_input("Contraseña", type="password")
+
+            recordar_dispositivo = st.checkbox(
+                "Confiar en este dispositivo (Mantener sesión abierta solo aquí)",
+                value=True
+            )
+
+            submit_login = st.form_submit_button("Ingresar")
+
+            if submit_login:
+                try:
+                    res = supabase.auth.sign_in_with_password({
+                        "email": email_login.strip(),
+                        "password": pass_login.strip(),
+                    })
+                    if res.user:
+                        st.session_state["usuario"] = res.user
+
+                        if recordar_dispositivo:
+                            nuevo_token = str(uuid.uuid4())
+                            cookie_manager.set(
+                                "dispositivo_confiable_token_bolsos", nuevo_token, max_age=31536000
+                            )
                             supabase.table("dispositivos_confiados").insert({
                                 "user_id": res.user.id,
                                 "device_token": nuevo_token,
                                 "email": res.user.email,
                                 "nombre_dispositivo": "Dispositivo Confiable Bolsos",
                             }).execute()
-                        except Exception:
-                            pass
-                            
-                    st.success("¡Bienvenido!")
-                    st.rerun()
-            except Exception as e:
-                st.error(f"Error al iniciar sesión: Verifique sus credenciales. ({e})")
-    else:
-        if st.button("Crear Cuenta", type="primary", key="btn_crear_auth"):
-            try:
-                res = supabase.auth.sign_up({"email": email.strip(), "password": password.strip()})
-                if res.user:
-                    st.success("¡Cuenta creada con éxito! Ya puedes iniciar sesión.")
-            except Exception as e:
-                st.error(f"Error al registrarse: {e}")
+
+                        st.success("¡Sesión iniciada con éxito!")
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Error al iniciar sesión: {e}")
+
+    with tab_registro:
+        with st.form("form_registro_bolsos"):
+            email_reg = st.text_input("Correo electrónico para el registro")
+            pass_reg = st.text_input("Contraseña", type="password")
+            submit_reg = st.form_submit_button("Crear Cuenta")
+
+            if submit_reg:
+                try:
+                    res = supabase.auth.sign_up({
+                        "email": email_reg.strip(),
+                        "password": pass_reg.strip(),
+                    })
+                    if res.user:
+                        st.success("¡Cuenta creada exitosamente! Ahora puedes iniciar sesión.")
+                except Exception as e:
+                    st.error(f"Error al registrarse: {e}")
 
 else:
     # --- APLICACIÓN PRINCIPAL ---
     usuario_actual = st.session_state["usuario"]
-    email_usuario = getattr(usuario_actual, "email", "usuario@bolsos.com").strip().lower()
-    email_corto = email_usuario.split("@")[0] if "@" in email_usuario else "usuario"
-    
-    # Recuperamos el token actual de la cookie para los botones de salida
-    device_token_cookie = cookie_manager.get(cookie="dispositivo_confiable_token_bolsos")
+    email_usuario = usuario_actual.email.strip().lower()
+    email_corto = email_usuario.split("@")[0]
     
     # --- PESTAÑAS PRINCIPALES ---
     tab_mis_bolsos, tab_crear, tab_compartidos, tab_permisos, tab_divisas = st.tabs([
@@ -146,9 +146,8 @@ else:
                 pass
             cookie_manager.delete("dispositivo_confiable_token_bolsos")
             
+        supabase.auth.sign_out()
         st.session_state["usuario"] = None
-        if "cookie_checked" in st.session_state:
-            del st.session_state["cookie_checked"]
         st.rerun()
         
     st.sidebar.markdown("---")
@@ -171,8 +170,6 @@ else:
                         cookie_manager.delete("dispositivo_confiable_token_bolsos")
                     
                     st.session_state["usuario"] = None
-                    if "cookie_checked" in st.session_state:
-                        del st.session_state["cookie_checked"]
                     st.success("Tu cuenta ha sido eliminada permanentemente.")
                     st.rerun()
                 except Exception as e:
