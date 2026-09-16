@@ -716,9 +716,9 @@ else:
             
             col_n1, col_n2 = st.columns(2)
             with col_n1:
-                nombre_vendedor = st.text_input("Nombre del Vendedor", placeholder="Ej. Luis", key="nuevo_vendedor_op")
+                nombre_vendedor = st.text_input("Nombre del Vendedor", placeholder="Ej. Name", key="nuevo_vendedor_op")
             with col_n2:
-                nombre_comprador = st.text_input("Nombre del Comprador", placeholder="Ej. Dana", key="nuevo_comprador_op")
+                nombre_comprador = st.text_input("Nombre del Comprador", placeholder="Ej. Name", key="nuevo_comprador_op")
             
             st.markdown("---")
             st.markdown("📦 **Estado de Entrega inicial:**")
