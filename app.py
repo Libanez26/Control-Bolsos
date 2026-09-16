@@ -695,10 +695,10 @@ else:
         if "divisas_registros" not in st.session_state:
             st.session_state["divisas_registros"] = [
                 {
-                    "Operación": "COMPRADO",
+                    
                     "Monto ($)": 20.0,
-                    "Vendedor": "Luis",
-                    "Comprador": "Dana",
+                    "Vendedor": "name",
+                    "Comprador": "name",
                     "Me Entregaron": True,
                     "Entregué": False
                 }
@@ -710,7 +710,7 @@ else:
             
             col_f1, col_f2 = st.columns(2)
             with col_f1:
-                tipo_operacion = st.selectbox("Tipo de Operación", ["VENDIDO", "COMPRADO"], key="nuevo_tipo_op")
+                tipo_operacion = st.selectbox("Tipo de Operación", ["VENDIDO"], key="nuevo_tipo_op")
             with col_f2:
                 monto_divisa = st.number_input("Monto en Dólares ($)", min_value=0.0, format="%.2f", value=20.0, key="nuevo_monto_op")
             
