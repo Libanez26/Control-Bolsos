@@ -165,8 +165,8 @@ else:
                         # Opciones exactas para el menú desplegable en cada celda de fecha
                         opciones_estado = [
                             "⏳ Pendiente", 
-                            "🟢 Toca Cobrar", 
-                            f"✅ Pagado ({email_corto})"
+                            "🟢 Recibe Pozo", 
+                            f"✅ Cobrado ({email_corto})"
                         ]
                         
                         # Configurar columnas
