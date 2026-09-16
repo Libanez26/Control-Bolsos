@@ -32,56 +32,30 @@ supabase = init_supabase()
 if "usuario" not in st.session_state:
     st.session_state["usuario"] = None
 
-# --- FUNCIONES DE PERSISTENCIA DE DATOS DE USUARIO ---
-def cargar_datos_usuario(user_id):
-    try:
-        res = supabase.table("perfiles_usuario").select("*").eq("id", user_id).execute()
-        if res.data and len(res.data) > 0:
-            datos = res.data[0]
-            # Aquí puedes cargar configuraciones adicionales del usuario si las guardas en Supabase
-    except Exception as e:
-        pass
+# --- RECUPERAR Y VALIDAR SESIÓN POR DISPOSITIVO (ESTILO NEXUS) ---
+if st.session_state["usuario"] is None:
+    if device_token_cookie:
+        try:
+            verificacion_disp = (
+                supabase.table("dispositivos_confiados")
+                .select("*")
+                .eq("device_token", device_token_cookie)
+                .execute()
+            )
+            if verificacion_disp.data and len(verificacion_disp.data) > 0:
+                user_id_asociado = verificacion_disp.data[0]["user_id"]
+                correo_asociado = verificacion_disp.data[0].get("email", "")
+                
+                # Si no está el correo en la tabla dispositivos, lo buscamos en auth o usamos un objeto dummy con el id
+                class UserDummy:
+                    def __init__(self, uid, uemail):
+                        self.id = uid
+                        self.email = uemail
 
-def guardar_datos_usuario():
-    if not st.session_state["usuario"]:
-        return
-    user_id = st.session_state["usuario"].id
-    correo = st.session_state["usuario"].email
-    data = {
-        "id": user_id,
-        "correo": correo,
-    }
-    try:
-        supabase.table("perfiles_usuario").upsert(data).execute()
-    except Exception as e:
-        pass
-
-# --- RECUPERAR Y VALIDAR SESIÓN POR DISPOSITIVO (COOKIE) ---
-if st.session_state["usuario"] is None and device_token_cookie:
-    try:
-        verificacion_disp = (
-            supabase.table("dispositivos_confiados")
-            .select("*")
-            .eq("device_token", device_token_cookie)
-            .execute()
-        )
-        
-        if verificacion_disp.data and len(verificacion_disp.data) > 0:
-            user_id_asociado = verificacion_disp.data[0]["user_id"]
-            correo_asociado = verificacion_disp.data[0].get("email", "usuario@bolsos.com")
-            
-            class UserDummy:
-                def __init__(self, uid, uemail):
-                    self.id = uid
-                    self.email = uemail
-
-            st.session_state["usuario"] = UserDummy(user_id_asociado, correo_asociado)
-            cargar_datos_usuario(user_id_asociado)
-        else:
-            cookie_manager.delete("dispositivo_confiable_token_bolsos")
-            st.session_state["usuario"] = None
-    except Exception:
-        st.session_state["usuario"] = None
+                st.session_state["usuario"] = UserDummy(user_id_asociado, correo_asociado)
+                st.rerun()
+        except Exception:
+            pass
 
 # --- PANTALLA DE LOGIN / REGISTRO ---
 if st.session_state["usuario"] is None:
@@ -104,7 +78,6 @@ if st.session_state["usuario"] is None:
                 res = supabase.auth.sign_in_with_password({"email": email.strip(), "password": password.strip()})
                 if res.user:
                     st.session_state["usuario"] = res.user
-                    guardar_datos_usuario()
                     
                     if recordar_dispositivo:
                         nuevo_token = str(uuid.uuid4())
@@ -137,8 +110,8 @@ if st.session_state["usuario"] is None:
 else:
     # --- APLICACIÓN PRINCIPAL ---
     usuario_actual = st.session_state["usuario"]
-    email_usuario = usuario_actual.email.strip().lower()
-    email_corto = email_usuario.split("@")[0]
+    email_usuario = getattr(usuario_actual, "email", "usuario@bolsos.com").strip().lower()
+    email_corto = email_usuario.split("@")[0] if "@" in email_usuario else "usuario"
     
     # --- PESTAÑAS PRINCIPALES ---
     tab_mis_bolsos, tab_crear, tab_compartidos, tab_permisos, tab_divisas = st.tabs([
