@@ -122,40 +122,41 @@ else:
                     monto_cuota = float(bolso['monto_cuota'])
                     pozo_total = monto_cuota * total_puestos
                     
-                    # Recuperar configuración de moneda y tasa
                     tipo_moneda = bolso.get('tipo_moneda', 'Divisa')
                     tipo_tasa = bolso.get('tipo_tasa', 'N/A')
                     otra_tasa = bolso.get('otra_tasa_detalle', '')
                     
-                    # Formatear etiqueta de moneda / tasa para mostrar
+                    # Construir texto limpio para el título y el símbolo
                     if tipo_moneda == "Divisa":
-                        etiqueta_moneda = "Divisa ($ / €)"
+                        texto_modalidad = "Divisa"
                         simbolo = "$"
                     else:
                         simbolo = "Bs."
-                        if tipo_tasa == "Otra" and otra_tasa:
-                            etiqueta_moneda = f"Bolívares (Tasa: {otra_tasa})"
+                        if tipo_tasa == "BCV (Dólar)":
+                            texto_modalidad = "BS - DOLAR"
+                        elif tipo_tasa == "BCV (Euro)":
+                            texto_modalidad = "BS - EURO"
+                        elif tipo_tasa == "Otra":
+                            texto_modalidad = f"BS - OTRA: {otra_tasa.upper() if otra_tasa else 'OTRA'}"
                         else:
-                            etiqueta_moneda = f"Bolívares (Tasa: {tipo_tasa})"
+                            texto_modalidad = "BS"
                     
                     fechas_str = bolso.get('fechas_cronograma', "15-sept, 30-sept, 15-oct, 30-oct, 15-nov, 30-nov, 15-dic")
                     fechas_bolso = [f.strip() for f in fechas_str.split(",") if f.strip()]
                     
-                    with st.expander(f"📦 {bolso['nombre']} — Cuota: {simbolo}{monto_cuota:,.2f} ({bolso['frecuencia']} - {etiqueta_moneda})"):
+                    # Título limpio del expander sin frecuencia
+                    with st.expander(f"📦 {bolso['nombre']} — Cuota: {simbolo}{monto_cuota:,.2f} ({texto_modalidad})"):
                         col1, col2, col3, col4 = st.columns(4)
                         col1.metric("Cuota por Persona", f"{simbolo}{monto_cuota:,.2f}")
                         col2.metric("Total Puestos", total_puestos)
                         col3.metric("Pozo a Recibir", f"{simbolo}{pozo_total:,.2f}")
                         col4.metric("Frecuencia", bolso['frecuencia'])
                         
-                        st.info(f"💱 **Modalidad de pago:** {etiqueta_moneda}")
-                        
-                        # Edición general con selectores de moneda y tasa dinámicos
+                        # Edición general con selectores de moneda y tasa
                         with st.popover("✏️ Editar configuración y fechas de este Bolso"):
                             nuevo_nombre = st.text_input("Nombre del Bolso", value=bolso['nombre'], key=f"edit_nom_{bolso_id}")
                             nuevo_monto = st.number_input("Monto por Cuota", min_value=0.0, format="%.2f", value=monto_cuota, key=f"edit_mont_{bolso_id}")
                             
-                            # Selección de Moneda
                             idx_moneda = ["Divisa", "Bolívares (Bs)"].index(tipo_moneda) if tipo_moneda in ["Divisa", "Bolívares (Bs)"] else 0
                             nueva_moneda = st.selectbox("Tipo de Moneda", ["Divisa", "Bolívares (Bs)"], index=idx_moneda, key=f"edit_moneda_{bolso_id}")
                             
@@ -302,14 +303,13 @@ else:
         except Exception as e:
             st.error(f"Error al cargar los bolsos: {e}")
 
-    # PESTAÑA 2: Crear un nuevo bolso con opción de divisa/bolívares y tasas
+    # PESTAÑA 2: Crear un nuevo bolso
     with tab_crear:
         st.subheader("Crear un Nuevo Bolso / San")
         
         nombre_bolso = st.text_input("Nombre del Bolso", key="new_nombre")
         monto_cuota = st.number_input("Monto por Cuota", min_value=0.0, format="%.2f", value=50.0, key="new_monto")
         
-        # Selección de moneda principal
         tipo_moneda = st.selectbox("Tipo de Moneda", ["Divisa", "Bolívares (Bs)"], key="new_moneda")
         
         tipo_tasa = "N/A"
@@ -318,7 +318,7 @@ else:
         if tipo_moneda == "Bolívares (Bs)":
             tipo_tasa = st.selectbox("¿A qué tasa?", ["BCV (Dólar)", "BCV (Euro)", "Otra"], key="new_tasa")
             if tipo_tasa == "Otra":
-                otra_tasa_detalle = st.text_input("Especifique cuál tasa (ej. Paralelo, Tasa propia)", key="new_otra_tasa")
+                otra_tasa_detalle = st.text_input("Especifique cuál tasa", key="new_otra_tasa")
         
         frecuencia = st.selectbox("Frecuencia", ["Quincenal", "Semanal", "Mensual"], key="new_freq")
         total_puestos = st.number_input("Número Total de Puestos", min_value=1, value=7, step=1, key="new_puestos")
@@ -384,17 +384,23 @@ else:
                         otra_tasa = bolso.get('otra_tasa_detalle', '')
                         
                         if tipo_moneda == "Divisa":
-                            etiqueta_moneda = "Divisa ($ / €)"
+                            texto_modalidad = "Divisa"
                             simbolo = "$"
                         else:
                             simbolo = "Bs."
-                            etiqueta_moneda = f"Bolívares (Tasa: {otra_tasa if tipo_tasa == 'Otra' else tipo_tasa})"
+                            if tipo_tasa == "BCV (Dólar)":
+                                texto_modalidad = "BS - DOLAR"
+                            elif tipo_tasa == "BCV (Euro)":
+                                texto_modalidad = "BS - EURO"
+                            elif tipo_tasa == "Otra":
+                                texto_modalidad = f"BS - OTRA: {otra_tasa.upper() if otra_tasa else 'OTRA'}"
+                            else:
+                                texto_modalidad = "BS"
                         
                         fechas_str = bolso.get('fechas_cronograma', "15-sept, 30-sept, 15-oct, 30-oct, 15-nov, 30-nov, 15-dic")
                         fechas_bolso = [f.strip() for f in fechas_str.split(",") if f.strip()]
                         
-                        with st.expander(f"📦 {bolso['nombre']} (Compartido - {nivel_acceso})"):
-                            st.info(f"Tienes nivel de acceso: **{nivel_acceso}** | Modalidad: **{etiqueta_moneda}**")
+                        with st.expander(f"📦 {bolso['nombre']} (Compartido - {nivel_acceso}) — Cuota: {simbolo}{monto_cuota:,.2f} ({texto_modalidad})"):
                             col1, col2, col3, col4 = st.columns(4)
                             col1.metric("Cuota", f"{simbolo}{monto_cuota:,.2f}")
                             col2.metric("Puestos", total_puestos)
