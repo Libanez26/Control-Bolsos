@@ -74,7 +74,7 @@ else:
         "⚙️ Control de Permisos"
     ])
 
-    # PESTAÑA 1: Ver bolsos, edición general y matriz interactiva
+    # PESTAÑA 1: Ver bolsos, edición general y matriz interactiva con cálculo de pozo
     with tab_mis_bolsos:
         st.subheader("Tus Bolsos Activos")
         
@@ -86,18 +86,21 @@ else:
                 for bolso in bolsos:
                     bolso_id = bolso['id']
                     total_puestos = int(bolso['total_puestos'])
+                    monto_cuota = float(bolso['monto_cuota'])
+                    pozo_total = monto_cuota * total_puestos # Cálculo automático del pozo que recibe cada participante
                     
-                    with st.expander(f"📦 {bolso['nombre']} — Monto: ${bolso['monto_cuota']} ({bolso['frecuencia']})"):
-                        col1, col2, col3 = st.columns(3)
-                        col1.metric("Monto por Cuota", f"${bolso['monto_cuota']}")
-                        col2.metric("Frecuencia", bolso['frecuencia'])
-                        col3.metric("Total Puestos", total_puestos)
+                    with st.expander(f"📦 {bolso['nombre']} — Monto Cuota: ${monto_cuota:,.2f} ({bolso['frecuencia']})"):
+                        col1, col2, col3, col4 = st.columns(4)
+                        col1.metric("Cuota por Persona", f"${monto_cuota:,.2f}")
+                        col2.metric("Total Puestos", total_puestos)
+                        col3.metric("Pozo a Recibir", f"${pozo_total:,.2f}")
+                        col4.metric("Frecuencia", bolso['frecuencia'])
                         
                         # --- SECCIÓN DE EDICIÓN GENERAL DEL BOLSO ---
                         with st.popover("✏️ Editar configuración de este Bolso"):
                             with st.form(f"form_editar_{bolso_id}"):
                                 nuevo_nombre = st.text_input("Nombre del Bolso", value=bolso['nombre'])
-                                nuevo_monto = st.number_input("Monto por Cuota", min_value=0.0, format="%.2f", value=float(bolso['monto_cuota']))
+                                nuevo_monto = st.number_input("Monto por Cuota", min_value=0.0, format="%.2f", value=monto_cuota)
                                 idx_freq = ["Quincenal", "Semanal", "Mensual"].index(bolso['frecuencia']) if bolso['frecuencia'] in ["Quincenal", "Semanal", "Mensual"] else 0
                                 nueva_freq = st.selectbox("Frecuencia", ["Quincenal", "Semanal", "Mensual"], index=idx_freq)
                                 nuevo_puestos = st.number_input("Número Total de Puestos", min_value=1, value=total_puestos, step=1)
@@ -129,10 +132,8 @@ else:
                         
                         # Si no hay registros o cambió el total de puestos, ajustarlos automáticamente
                         if not datos_existentes or len(set(r["nro_puesto"] for r in datos_existentes)) != total_puestos:
-                            # Opcional: si quieres limpiar o rellenar puestos nuevos
                             for i in range(1, total_puestos + 1):
                                 for idx, fecha in enumerate(fechas_quincenales):
-                                    # Verificar si ya existe este puesto y fecha
                                     existe = any(d["nro_puesto"] == i and d["fecha"] == fecha for d in datos_existentes)
                                     if not existe:
                                         estado_inicial = "🟢 Toca Cobrar" if (idx + 1) == i else "⏳ Pendiente"
@@ -151,7 +152,7 @@ else:
                         matriz_dict = {}
                         for row in datos_existentes:
                             puesto = row["nro_puesto"]
-                            if puesto <= total_puestos:  # Solo mostrar hasta el total de puestos configurados
+                            if puesto <= total_puestos:
                                 if puesto not in matriz_dict:
                                     matriz_dict[puesto] = {
                                         "Nro. Puesto": puesto,
