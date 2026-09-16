@@ -134,12 +134,11 @@ else:
                         
                         df_matriz = pd.DataFrame(list(matriz_dict.values()))
                         
-                        # Opciones exactas para el menú desplegable en cada celda de fecha
+                        # Opciones exactas para el menú desplegable en cada celda de fecha (Solo Pendiente, Toca Cobrar y Pagado)
                         opciones_estado = [
                             "⏳ Pendiente", 
                             "🟢 Toca Cobrar", 
-                            f"✅ Pagado ({email_corto})", 
-                            f"💰 Cobrado ({email_corto})"
+                            f"✅ Pagado ({email_corto})"
                         ]
                         
                         # Configurar columnas (Nro bloqueado, Participante texto, Fechas con selectores)
