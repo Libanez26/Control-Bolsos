@@ -276,7 +276,8 @@ else:
                                     df_matriz[col] = "⏳ Pendiente"
                             df_matriz = df_matriz[[c for c in columnas_fijas if c in df_matriz.columns]]
 
-                            opciones_estado = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Pagado ({email_corto})"]
+                            # Opciones de pago dinámicas incluyendo el usuario actual para indicar quién recibió/registró el dinero
+                            opciones_base = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Pagado (por {email_corto})"]
                             
                             column_config_dict = {
                                 "Nro. Puesto": st.column_config.NumberColumn("Nro.", disabled=True, width="small"),
@@ -284,6 +285,8 @@ else:
                             }
                             
                             for fecha in fechas_bolso:
+                                valores_existentes = df_matriz[fecha].dropna().unique().tolist() if fecha in df_matriz.columns else []
+                                opciones_estado = list(dict.fromkeys(opciones_base + valores_existentes))
                                 column_config_dict[fecha] = st.column_config.SelectboxColumn(
                                     label=fecha, options=opciones_estado, required=True, width="medium"
                                 )
@@ -428,7 +431,6 @@ else:
                             
                             st.markdown("---")
                             
-                            # Si es Editor, permitimos ver el botón para editar la configuración general del bolso compartido
                             if nivel_acceso == "Editor":
                                 with st.popover("✏️ Editar configuración y fechas de este Bolso"):
                                     nuevo_nombre = st.text_input("Nombre del Bolso", value=bolso['nombre'], key=f"edit_shared_nom_{b_id}")
@@ -530,15 +532,19 @@ else:
                                         df_matriz[col] = "⏳ Pendiente"
                                 df_matriz = df_matriz[[c for c in columnas_fijas if c in df_matriz.columns]]
 
-                                opciones_estado = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Pagado ({email_corto})"]
-                                
                                 es_solo_lectura = (nivel_acceso == "Lectura")
+                                
+                                # Opciones de pago dinámicas incluyendo al usuario actual logueado
+                                opciones_base = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Pagado (por {email_corto})"]
                                 
                                 column_config_dict = {
                                     "Nro. Puesto": st.column_config.NumberColumn("Nro.", disabled=True, width="small"),
                                     "Participante": st.column_config.TextColumn("Participante", disabled=es_solo_lectura, width="medium"),
                                 }
+                                
                                 for fecha in fechas_bolso:
+                                    valores_existentes = df_matriz[fecha].dropna().unique().tolist() if fecha in df_matriz.columns else []
+                                    opciones_estado = list(dict.fromkeys(opciones_base + valores_existentes))
                                     column_config_dict[fecha] = st.column_config.SelectboxColumn(
                                         label=fecha, options=opciones_estado, required=True, width="medium", disabled=es_solo_lectura
                                     )
@@ -592,7 +598,7 @@ else:
                     try:
                         resp_check = supabase.table("compartidos").select("*").eq("bolso_id", bolso_id_seleccionado).eq("email_colaborador", correo_limpio).execute()
                         
-                        if resp_check.data and len(resp_check.data) > 0:
+                        if resp_check.data and len(resp_check.data > 0):
                             st.warning(f"⚠️ El usuario **{correo_limpio}** ya tiene acceso a este bolso.")
                         else:
                             supabase.table("compartidos").insert({
