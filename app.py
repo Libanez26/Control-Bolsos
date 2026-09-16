@@ -22,9 +22,16 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
-# --- ESTADO DE SESIÓN ---
+# --- ESTADO DE SESIÓN Y PERSISTENCIA AL RECARGAR ---
 if "usuario" not in st.session_state:
     st.session_state["usuario"] = None
+    # Intentar recuperar la sesión activa si el navegador se recarga
+    try:
+        session_data = supabase.auth.get_session()
+        if session_data and session_data.user:
+            st.session_state["usuario"] = session_data.user
+    except Exception:
+        pass
 
 # --- PANTALLA DE LOGIN / REGISTRO ---
 if st.session_state["usuario"] is None:
@@ -62,7 +69,10 @@ else:
     
     st.sidebar.markdown(f"👤 **Usuario:** {email_corto}")
     if st.sidebar.button("Cerrar Sesión"):
-        supabase.auth.sign_out()
+        try:
+            supabase.auth.sign_out()
+        except Exception:
+            pass
         st.session_state["usuario"] = None
         st.rerun()
 
@@ -230,8 +240,14 @@ else:
             shared_records = resp_comp.data if resp_comp.data else []
             
             if shared_records:
-                for rec in shared_records:
+                bolsos_vistos = set()
+                
+                for idx, rec in enumerate(shared_records):
                     b_id = rec["bolso_id"]
+                    if b_id in bolsos_vistos:
+                        continue
+                    bolsos_vistos.add(b_id)
+                    
                     nivel_acceso = rec["nivel"]
                     
                     b_info_resp = supabase.table("bolsos").select("*").eq("id", b_id).execute()
@@ -278,10 +294,10 @@ else:
                                         label=fecha, options=opciones_estado, required=True, width="medium", disabled=(nivel_acceso == "Lectura")
                                     )
 
-                                df_editado = st.data_editor(df_matriz, column_config=column_config_dict, use_container_width=True, hide_index=True, key=f"editor_shared_{b_id}")
+                                df_editado = st.data_editor(df_matriz, column_config=column_config_dict, use_container_width=True, hide_index=True, key=f"editor_shared_{b_id}_{idx}")
                                 
                                 if nivel_acceso == "Editor":
-                                    if st.button("Guardar Cambios Compartidos", key=f"btn_save_shared_{b_id}", type="primary"):
+                                    if st.button("Guardar Cambios Compartidos", key=f"btn_save_shared_{b_id}_{idx}", type="primary"):
                                         try:
                                             for index, row in df_editado.iterrows():
                                                 puesto = row["Nro. Puesto"]
@@ -323,14 +339,19 @@ else:
                 if correo_colaborador and selected_nombre != "No hay bolsos":
                     bolso_id_seleccionado = mis_b_nombres[selected_nombre]
                     correo_limpio = correo_colaborador.strip().lower()
+                    
                     try:
-                        # Guardar el permiso en la tabla 'compartidos'
-                        supabase.table("compartidos").insert({
-                            "bolso_id": bolso_id_seleccionado,
-                            "email_colaborador": correo_limpio,
-                            "nivel": nivel_permiso
-                        }).execute()
-                        st.success(f"¡Acceso otorgado exitosamente a {correo_limpio} para el bolso '{selected_nombre}'!")
+                        resp_check = supabase.table("compartidos").select("*").eq("bolso_id", bolso_id_seleccionado).eq("email_colaborador", correo_limpio).execute()
+                        
+                        if resp_check.data and len(resp_check.data) > 0:
+                            st.warning(f"⚠️ El usuario **{correo_limpio}** ya tiene acceso a este bolso.")
+                        else:
+                            supabase.table("compartidos").insert({
+                                "bolso_id": bolso_id_seleccionado,
+                                "email_colaborador": correo_limpio,
+                                "nivel": nivel_permiso
+                            }).execute()
+                            st.success(f"¡Acceso otorgado exitosamente a {correo_limpio} para el bolso '{selected_nombre}'!")
                     except Exception as e:
                         st.error(f"Error al otorgar acceso: {e}")
                 else:
