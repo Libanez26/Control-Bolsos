@@ -1,8 +1,8 @@
 import datetime
 import uuid
+import extra_streamlit_components as st_cookie
 import streamlit as st
 import pandas as pd
-import extra_streamlit_components as st_cookies
 from supabase import Client, create_client
 
 # --- CONFIGURACIÓN DE PÁGINA ---
@@ -11,6 +11,10 @@ st.set_page_config(
     page_icon="💰",
     layout="wide",
 )
+
+# --- GESTOR DE COOKIES ---
+cookie_manager = st_cookie.CookieManager()
+device_token_cookie = cookie_manager.get(cookie="dispositivo_confiable_token_bolsos")
 
 # --- INICIALIZAR SUPABASE ---
 @st.cache_resource
@@ -24,29 +28,39 @@ def init_supabase() -> Client:
 
 supabase = init_supabase()
 
-# --- GESTOR DE COOKIES ---
-cookie_manager = st_cookies.CookieManager()
-
-# --- ESTADO DE SESIÓN Y AISLAMIENTO POR DISPOSITIVO/PESTAÑA ---
+# --- ESTADO DE SESIÓN ---
 if "usuario" not in st.session_state:
     st.session_state["usuario"] = None
 
-# Intentar recuperar la sesión *únicamente* usando la cookie exclusiva de esta pestaña/dispositivo
+# --- RECUPERAR SESIÓN POR DISPOSITIVO (COOKIE) ---
 if st.session_state["usuario"] is None:
-    try:
-        device_token = cookie_manager.get("device_token")
-        if device_token:
-            # Buscar el token en nuestra tabla independiente
-            resp_token = supabase.table("dispositivos_confiados").select("user_id, email").eq("token", device_token).execute()
-            if resp_token.data:
-                # Reconstruimos un objeto de usuario simulado con los datos guardados
-                class UsuarioSesion:
+    if device_token_cookie:
+        try:
+            verificacion_disp = (
+                supabase.table("dispositivos_confiados")
+                .select("*")
+                .eq("device_token", device_token_cookie)
+                .execute()
+            )
+            if verificacion_disp.data and len(verificacion_disp.data) > 0:
+                user_id_asociado = verificacion_disp.data[0]["user_id"]
+                correo_asociado = verificacion_disp.data[0].get("email", "usuario@bolsos.com")
+                
+                class UserDummy:
                     def __init__(self, uid, uemail):
                         self.id = uid
                         self.email = uemail
-                
-                user_info = resp_token.data[0]
-                st.session_state["usuario"] = UsuarioSesion(user_info["user_id"], user_info["email"])
+
+                st.session_state["usuario"] = UserDummy(user_id_asociado, correo_asociado)
+                st.rerun()
+        except Exception:
+            pass
+
+    # Verificación estándar de Supabase por si acaso
+    try:
+        session_data = supabase.auth.get_session()
+        if session_data and session_data.user:
+            st.session_state["usuario"] = session_data.user
     except Exception:
         pass
 
@@ -59,37 +73,37 @@ if st.session_state["usuario"] is None:
     email = st.text_input("Correo electrónico")
     password = st.text_input("Contraseña", type="password")
     
+    recordar_dispositivo = st.checkbox(
+        "Confiar en este dispositivo (Mantener sesión abierta solo aquí)",
+        value=True
+    )
+    
     if modo == "Iniciar Sesión":
         if st.button("Ingresar", type="primary"):
             try:
-                # Validamos credenciales con Supabase Auth pero la persistencia la llevamos nosotros
                 res = supabase.auth.sign_in_with_password({"email": email, "password": password})
                 if res.user:
-                    user_id = res.user.id
-                    user_email = res.user.email
+                    st.session_state["usuario"] = res.user
                     
-                    # Generamos un token único e irrepetible para *esta* pestaña/dispositivo
-                    device_token = str(uuid.uuid4())
-                    
-                    supabase.table("dispositivos_confiados").insert({
-                        "user_id": user_id,
-                        "email": user_email,
-                        "token": device_token
-                    }).execute()
-                    
-                    # Guardamos la cookie de forma aislada
-                    cookie_manager.set("device_token", device_token, max_age=31536000)
-                    
-                    class UsuarioSesion:
-                        def __init__(self, uid, uemail):
-                            self.id = uid
-                            self.email = uemail
+                    if recordar_dispositivo:
+                        nuevo_token = str(uuid.uuid4())
+                        cookie_manager.set(
+                            "dispositivo_confiable_token_bolsos", nuevo_token, max_age=31536000
+                        )
+                        try:
+                            supabase.table("dispositivos_confiados").insert({
+                                "user_id": res.user.id,
+                                "device_token": nuevo_token,
+                                "email": res.user.email,
+                                "nombre_dispositivo": "Dispositivo Confiable Bolsos",
+                            }).execute()
+                        except Exception:
+                            pass
                             
-                    st.session_state["usuario"] = UsuarioSesion(user_id, user_email)
                     st.success("¡Bienvenido!")
                     st.rerun()
             except Exception as e:
-                st.error("Error al iniciar sesión: Verifique sus credenciales.")
+                st.error(f"Error al iniciar sesión: Verifique sus credenciales. ({e})")
     else:
         if st.button("Crear Cuenta", type="primary"):
             try:
@@ -107,16 +121,22 @@ else:
     
     # --- BARRA LATERAL ---
     st.sidebar.markdown(f"👤 **Usuario:** {email_corto}")
-    if st.sidebar.button("Cerrar Sesión"):
+    
+    if st.sidebar.button("Cerrar Sesión en este equipo"):
+        if device_token_cookie:
+            try:
+                supabase.table("dispositivos_confiados").delete().eq(
+                    "device_token", device_token_cookie
+                ).execute()
+            except Exception:
+                pass
+            cookie_manager.delete("dispositivo_confiable_token_bolsos")
+            
         try:
-            # Borrar únicamente el token de *este* dispositivo de la base de datos y limpiar la cookie local
-            device_token = cookie_manager.get("device_token")
-            if device_token:
-                supabase.table("dispositivos_confiados").delete().eq("token", device_token).execute()
-                cookie_manager.delete("device_token")
+            supabase.auth.sign_out()
         except Exception:
             pass
-        
+            
         st.session_state["usuario"] = None
         st.rerun()
         
@@ -130,11 +150,16 @@ else:
             if confirmar_eliminacion:
                 try:
                     supabase.rpc("eliminar_cuenta_usuario").execute()
+                    if device_token_cookie:
+                        try:
+                            supabase.table("dispositivos_confiados").delete().eq(
+                                "device_token", device_token_cookie
+                            ).execute()
+                        except:
+                            pass
+                        cookie_manager.delete("dispositivo_confiable_token_bolsos")
                     try:
-                        device_token = cookie_manager.get("device_token")
-                        if device_token:
-                            supabase.table("dispositivos_confiados").delete().eq("token", device_token).execute()
-                            cookie_manager.delete("device_token")
+                        supabase.auth.sign_out()
                     except:
                         pass
                     st.session_state["usuario"] = None
@@ -648,7 +673,7 @@ else:
             selected_nombre = st.selectbox("Selecciona el Bolso a compartir", list(mis_b_nombres.keys()) if mis_b_nombres else ["No hay bolsos"])
             nivel_permiso = st.selectbox("Nivel de Acceso", ["Editor", "Lectura"])
             
-            submit_permiso = st.form_submit_button("Conceder Accesso")
+            submit_permiso = st.form_submit_button("Conceder Acceso")
             
             if submit_permiso:
                 if correo_colaborador and selected_nombre != "No hay bolsos":
