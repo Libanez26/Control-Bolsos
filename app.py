@@ -45,7 +45,7 @@ if st.session_state["usuario"] is None:
                     st.success("¡Bienvenido!")
                     st.rerun()
             except Exception as e:
-                st.error(f"Error al iniciar sesión: Verifique sus credenciales.")
+                st.error("Error al iniciar sesión: Verifique sus credenciales.")
     else:
         if st.button("Crear Cuenta", type="primary"):
             try:
@@ -67,7 +67,6 @@ else:
 
     st.title("💼 Panel de Control de Bolsos y Sanes")
 
-    # Pestañas principales de la aplicación
     tab_mis_bolsos, tab_crear, tab_compartidos, tab_permisos = st.tabs([
         "📂 Mis Bolsos", 
         "➕ Nuevo Bolso", 
@@ -78,52 +77,81 @@ else:
     # PESTAÑA 1: Ver y gestionar bolsos propios
     with tab_mis_bolsos:
         st.subheader("Tus Bolsos Activos")
-        st.info("Aquí podrás visualizar el estado de tus bolsos, turnos y control de pagos.")
         
-        # Aquí puedes conectar la consulta a tu tabla 'bolsos' en Supabase:
-        # data = supabase.table("bolsos").select("*").eq("creador_id", usuario_actual.id).execute()
-        # st.dataframe(data.data)
-        st.write("*(Espacio preparado para listar tus bolsos desde Supabase)*")
+        try:
+            # Consultar los bolsos creados por el usuario actual
+            response = supabase.table("bolsos").select("*").eq("creador_id", usuario_actual.id).execute()
+            bolsos = response.data
+            
+            if bolsos:
+                df = pd.DataFrame(bolsos)
+                # Seleccionar y renombrar columnas clave para mostrar
+                df_display = df[["nombre", "monto_cuota", "frecuencia", "total_puestos"]]
+                df_display.columns = ["Nombre del Bolso", "Monto Cuota", "Frecuencia", "Puestos"]
+                st.dataframe(df_display, use_container_width=True)
+            else:
+                st.info("Aún no tienes bolsos creados. Ve a la pestaña 'Nuevo Bolso' para registrar el primero.")
+        except Exception as e:
+            st.error(f"Error al cargar los bolsos. Asegúrate de haber creado la tabla 'bolsos' en Supabase. Detalle: {e}")
 
     # PESTAÑA 2: Crear un nuevo bolso
     with tab_crear:
         st.subheader("Crear un Nuevo Bolso / San")
         
-        with st.form("form_nuevo_bolso"):
+        with st.form("form_nuevo_bolso", clear_on_submit=True):
             nombre_bolso = st.text_input("Nombre del Bolso (Ej. Bolso Quincenal)")
             monto_cuota = st.number_input("Monto por Cuota", min_value=0.0, format="%.2f")
             frecuencia = st.selectbox("Frecuencia", ["Semanal", "Quincenal", "Mensual"])
             total_puestos = st.number_input("Número Total de Puestos / Participantes", min_value=1, step=1)
             
-            submit_bolso = st.form_submit_button("Guardar Bolso")
+            submit_bolso = st.form_submit_button("Guardar Bolso", type="primary")
             
             if submit_bolso:
                 if nombre_bolso:
-                    # Aquí insertarías el registro en Supabase en la tabla 'bolsos'
-                    st.success(f"¡Bolso '{nombre_bolso}' creado exitosamente!")
+                    try:
+                        # Insertar en la base de datos de Supabase
+                        data_insert = {
+                            "nombre": nombre_bolso,
+                            "monto_cuota": monto_cuota,
+                            "frecuencia": frecuencia,
+                            "total_puestos": int(total_puestos),
+                            "creador_id": usuario_actual.id
+                        }
+                        supabase.table("bolsos").insert(data_insert).execute()
+                        st.success(f"¡Bolso '{nombre_bolso}' creado y guardado exitosamente!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error al guardar en Supabase: {e}")
                 else:
                     st.warning("Por favor ingresa al menos el nombre del bolso.")
 
-    # PESTAÑA 3: Bolsos compartidos por la otra persona
+    # PESTAÑA 3: Bolsos compartidos
     with tab_compartidos:
         st.subheader("Bolsos Compartidos Conmigo")
         st.info("Aquí verás los bolsos a los que la otra persona te ha dado acceso de colaboración.")
-        st.write("*(Los bolsos compartidos aparecerán aquí automáticamente al sincronizar permisos)*")
 
-    # PESTAÑA 4: Gestión de permisos para el segundo organizador
+    # PESTAÑA 4: Gestión de permisos
     with tab_permisos:
         st.subheader("Configuración de Colaboradores")
         st.write("Comparte el acceso a tus bolsos con el segundo organizador ingresando su correo electrónico.")
         
         with st.form("form_permisos"):
             correo_colaborador = st.text_input("Correo electrónico del colaborador")
-            bolso_a_otorgar = st.selectbox("Selecciona el Bolso a compartir", ["Ej: Bolso 1", "Ej: Bolso 2", "Ej: Bolso 3", "Ej: Bolso 4", "Ej: Bolso 5", "Ej: Bolso 6", "Ej: Bolso 7"])
+            
+            # Obtener nombres de bolsos propios para el selector
+            try:
+                resp_b = supabase.table("bolsos").select("id, nombre").eq("creador_id", usuario_actual.id).execute()
+                mis_b_nombres = {b["nombre"]: b["id"] for b in resp_b.data} if resp_b.data else {}
+            except:
+                mis_b_nombres = {}
+                
+            selected_nombre = st.selectbox("Selecciona el Bolso a compartir", list(mis_b_nombres.keys()) if mis_b_nombres else ["No hay bolsos"])
             nivel_permiso = st.selectbox("Nivel de Acceso", ["Editor (Puede modificar pagos y turnos)", "Lectura (Solo ver)"])
             
             submit_permiso = st.form_submit_button("Conceder Acceso")
             
             if submit_permiso:
-                if correo_colaborador:
-                    st.success(f"¡Acceso otorgado a {correo_colaborador} para el bolso seleccionado!")
+                if correo_colaborador and selected_nombre != "No hay bolsos":
+                    st.success(f"¡Acceso otorgado a {correo_colaborador} para el bolso '{selected_nombre}'!")
                 else:
-                    st.warning("Ingresa un correo válido.")
+                    st.warning("Verifica el correo y que tengas bolsos creados.")
