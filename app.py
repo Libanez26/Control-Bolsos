@@ -159,13 +159,13 @@ else:
 
     st.title("💼 Panel de Control de Bolsos y Sanes")
 
-    # --- DEFINICIÓN DE PESTAÑAS ---
+    # DEFINICIÓN DE PESTAÑAS PRINCIPALES
     tab_mis_bolsos, tab_crear, tab_compartidos, tab_permisos, tab_divisas = st.tabs([
-        "📂 Mis Bolsos", 
-        "➕ Nuevo Bolso", 
-        "🤝 Bolsos Compartidos", 
-        "⚙️ Control de Permisos",
-        "💱 Compra/Venta Dólares"
+        "📦 Mis Bolsos", 
+        "➕ Crear Bolso", 
+        "🤝 Compartidos", 
+        "⚙️ Permisos", 
+        "💱 Divisas"
     ])
 
     # PESTAÑA 1: Ver tus bolsos
@@ -608,7 +608,6 @@ else:
                                 df_matriz = df_matriz[[c for c in columnas_fijas if c in df_matriz.columns]]
 
                                 es_solo_lectura = (nivel_acceso == "Lectura")
-                                
                                 opciones_base = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Pagado (por {email_corto})"]
                                 
                                 column_config_dict = {
@@ -689,36 +688,35 @@ else:
     # PESTAÑA 5: Compra/Venta Dólares
     with tab_divisas:
         st.subheader("💱 Control de Compra y Venta de Dólares")
-        st.write("Registra las operaciones indicando quién vende, quién compra, los montos y los estados de entrega.")
+        st.write("Lleva el control de quién te vende, a quién le vendes y los estados de entrega de dinero.")
         
-        # Estructura inicial en sesión si no existe
         if "divisas_registros" not in st.session_state:
             st.session_state["divisas_registros"] = [
                 {
-                    
-                    "Monto ($)": 20.0,
-                    "Vendedor": "name",
-                    "Comprador": "name",
+                    "Operación": "VENDIDO",
+                    "Monto ($)": 100.0,
+                    "Nombre": "Carlos Silva",
                     "Me Entregaron": True,
                     "Entregué": False
+                },
+                {
+                    "Operación": "COMPRADO",
+                    "Monto ($)": 50.0,
+                    "Nombre": "Ana Torres",
+                    "Me Entregaron": False,
+                    "Entregué": True
                 }
             ]
 
-        # Formulario para agregar nueva operación con Vendedor y Comprador
         with st.form("form_nueva_divisa", clear_on_submit=True):
             st.markdown("### ➕ Registrar Nueva Operación")
-            
-            col_f1, col_f2 = st.columns(2)
+            col_f1, col_f2, col_f3 = st.columns(3)
             with col_f1:
-                tipo_operacion = st.selectbox("Tipo de Operación", ["VENDIDO"], key="nuevo_tipo_op")
+                tipo_operacion = st.selectbox("Operación", ["VENDIDO", "COMPRADO"], key="nuevo_tipo_op")
             with col_f2:
-                monto_divisa = st.number_input("Monto en Dólares ($)", min_value=0.0, format="%.2f", value=20.0, key="nuevo_monto_op")
-            
-            col_n1, col_n2 = st.columns(2)
-            with col_n1:
-                nombre_vendedor = st.text_input("Nombre del Vendedor", placeholder="Ej. Name", key="nuevo_vendedor_op")
-            with col_n2:
-                nombre_comprador = st.text_input("Nombre del Comprador", placeholder="Ej. Name", key="nuevo_comprador_op")
+                monto_divisa = st.number_input("Monto en Dólares ($)", min_value=0.0, format="%.2f", value=50.0, key="nuevo_monto_op")
+            with col_f3:
+                nombre_persona = st.text_input("Nombre de la Persona", placeholder="Ej. Juan Pérez", key="nuevo_nombre_op")
             
             st.markdown("---")
             st.markdown("📦 **Estado de Entrega inicial:**")
@@ -731,60 +729,40 @@ else:
             btn_guardar_divisa = st.form_submit_button("Guardar Operación", type="primary")
             
             if btn_guardar_divisa:
-                if nombre_vendedor.strip() and nombre_comprador.strip():
+                if nombre_persona.strip():
                     st.session_state["divisas_registros"].append({
                         "Operación": tipo_operacion,
                         "Monto ($)": monto_divisa,
-                        "Vendedor": nombre_vendedor.strip(),
-                        "Comprador": nombre_comprador.strip(),
+                        "Nombre": nombre_persona.strip(),
                         "Me Entregaron": chk_me_entregaron,
                         "Entregué": chk_entregue
                     })
                     st.success("¡Operación registrada con éxito!")
                     st.rerun()
                 else:
-                    st.warning("Por favor ingresa tanto el nombre del vendedor como el del comprador.")
+                    st.warning("Por favor ingresa el nombre de la persona.")
 
         st.markdown("---")
         st.subheader("📋 Listado y Control de Operaciones")
-        st.write("Puedes editar directamente los campos o marcar las casillas de verificación para actualizar el estado al instante.")
 
         if st.session_state["divisas_registros"]:
             df_divisas = pd.DataFrame(st.session_state["divisas_registros"])
             
             columnas_config_divisas = {
                 "Operación": st.column_config.SelectboxColumn(
-                    "Operación",
-                    options=["VENDIDO", "COMPRADO"],
-                    required=True,
-                    width="small"
+                    "Operación", options=["VENDIDO", "COMPRADO"], required=True, width="medium"
                 ),
                 "Monto ($)": st.column_config.NumberColumn(
-                    "Monto ($)",
-                    format="$%.2f",
-                    min_value=0.0,
-                    required=True,
-                    width="small"
+                    "Monto (\()", format="\)%.2f", min_value=0.0, required=True, width="small"
                 ),
-                "Vendedor": st.column_config.TextColumn(
-                    "Vendedor",
-                    required=True,
-                    width="medium"
-                ),
-                "Comprador": st.column_config.TextColumn(
-                    "Comprador",
-                    required=True,
-                    width="medium"
+                "Nombre": st.column_config.TextColumn(
+                    "Nombre (Cliente / Proveedor)", required=True, width="large"
                 ),
                 "Me Entregaron": st.column_config.CheckboxColumn(
-                    "Me Entregaron",
-                    required=True,
-                    width="small"
+                    "Me Entregaron", required=True, width="small"
                 ),
                 "Entregué": st.column_config.CheckboxColumn(
-                    "Entregué",
-                    required=True,
-                    width="small"
+                    "Entregué", required=True, width="small"
                 ),
             }
 
@@ -797,7 +775,6 @@ else:
             )
 
             col_bt_1, col_bt_2 = st.columns([1, 4])
-            
             with col_bt_1:
                 if st.button("💾 Guardar Cambios", type="primary", key="btn_guardar_cambios_divisas"):
                     st.session_state["divisas_registros"] = df_divisas_editado.to_dict(orient="records")
