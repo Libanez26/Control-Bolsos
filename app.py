@@ -12,10 +12,6 @@ st.set_page_config(
     layout="wide",
 )
 
-# --- GESTOR DE COOKIES ---
-cookie_manager = st_cookie.CookieManager()
-device_token_cookie = cookie_manager.get(cookie="dispositivo_confiable_token_bolsos")
-
 # --- INICIALIZAR SUPABASE ---
 @st.cache_resource
 def init_supabase() -> Client:
@@ -32,8 +28,13 @@ supabase = init_supabase()
 if "usuario" not in st.session_state:
     st.session_state["usuario"] = None
 
-# --- RECUPERAR Y VALIDAR SESIÓN POR DISPOSITIVO (ESTILO NEXUS) ---
+# --- GESTOR DE COOKIES Y RECUPERACIÓN AUTOMÁTICA ---
+cookie_manager = st_cookie.CookieManager()
+
+# Si el usuario no está logueado, intentamos recuperar la cookie
 if st.session_state["usuario"] is None:
+    device_token_cookie = cookie_manager.get(cookie="dispositivo_confiable_token_bolsos")
+    
     if device_token_cookie:
         try:
             verificacion_disp = (
@@ -42,11 +43,11 @@ if st.session_state["usuario"] is None:
                 .eq("device_token", device_token_cookie)
                 .execute()
             )
+            
             if verificacion_disp.data and len(verificacion_disp.data) > 0:
                 user_id_asociado = verificacion_disp.data[0]["user_id"]
-                correo_asociado = verificacion_disp.data[0].get("email", "")
+                correo_asociado = verificacion_disp.data[0].get("email", "usuario@bolsos.com")
                 
-                # Si no está el correo en la tabla dispositivos, lo buscamos en auth o usamos un objeto dummy con el id
                 class UserDummy:
                     def __init__(self, uid, uemail):
                         self.id = uid
@@ -54,8 +55,15 @@ if st.session_state["usuario"] is None:
 
                 st.session_state["usuario"] = UserDummy(user_id_asociado, correo_asociado)
                 st.rerun()
+            else:
+                cookie_manager.delete("dispositivo_confiable_token_bolsos")
         except Exception:
             pass
+    else:
+        # Pequeña pausa de sincronización para asegurar que el componente de cookies responde en la primera carga
+        if "cookie_checked" not in st.session_state:
+            st.session_state["cookie_checked"] = True
+            st.rerun()
 
 # --- PANTALLA DE LOGIN / REGISTRO ---
 if st.session_state["usuario"] is None:
@@ -113,6 +121,9 @@ else:
     email_usuario = getattr(usuario_actual, "email", "usuario@bolsos.com").strip().lower()
     email_corto = email_usuario.split("@")[0] if "@" in email_usuario else "usuario"
     
+    # Recuperamos el token actual de la cookie para los botones de salida
+    device_token_cookie = cookie_manager.get(cookie="dispositivo_confiable_token_bolsos")
+    
     # --- PESTAÑAS PRINCIPALES ---
     tab_mis_bolsos, tab_crear, tab_compartidos, tab_permisos, tab_divisas = st.tabs([
         "📦 Mis Bolsos", 
@@ -136,6 +147,8 @@ else:
             cookie_manager.delete("dispositivo_confiable_token_bolsos")
             
         st.session_state["usuario"] = None
+        if "cookie_checked" in st.session_state:
+            del st.session_state["cookie_checked"]
         st.rerun()
         
     st.sidebar.markdown("---")
@@ -158,6 +171,8 @@ else:
                         cookie_manager.delete("dispositivo_confiable_token_bolsos")
                     
                     st.session_state["usuario"] = None
+                    if "cookie_checked" in st.session_state:
+                        del st.session_state["cookie_checked"]
                     st.success("Tu cuenta ha sido eliminada permanentemente.")
                     st.rerun()
                 except Exception as e:
