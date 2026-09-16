@@ -126,7 +126,6 @@ else:
                     tipo_tasa = bolso.get('tipo_tasa', 'N/A')
                     otra_tasa = bolso.get('otra_tasa_detalle', '')
                     
-                    # Construir texto limpio para el título y el símbolo
                     if tipo_moneda == "Divisa":
                         texto_modalidad = "Divisa"
                         simbolo = "$"
@@ -144,7 +143,6 @@ else:
                     fechas_str = bolso.get('fechas_cronograma', "15-sept, 30-sept, 15-oct, 30-oct, 15-nov, 30-nov, 15-dic")
                     fechas_bolso = [f.strip() for f in fechas_str.split(",") if f.strip()]
                     
-                    # Título limpio del expander sin frecuencia
                     with st.expander(f"📦 {bolso['nombre']} — Cuota: {simbolo}{monto_cuota:,.2f} ({texto_modalidad})"):
                         col1, col2, col3, col4 = st.columns(4)
                         col1.metric("Cuota por Persona", f"{simbolo}{monto_cuota:,.2f}")
@@ -152,7 +150,7 @@ else:
                         col3.metric("Pozo a Recibir", f"{simbolo}{pozo_total:,.2f}")
                         col4.metric("Frecuencia", bolso['frecuencia'])
                         
-                        # Edición general con selectores de moneda y tasa
+                        # Edición general y eliminación dentro del popover
                         with st.popover("✏️ Editar configuración y fechas de este Bolso"):
                             nuevo_nombre = st.text_input("Nombre del Bolso", value=bolso['nombre'], key=f"edit_nom_{bolso_id}")
                             nuevo_monto = st.number_input("Monto por Cuota", min_value=0.0, format="%.2f", value=monto_cuota, key=f"edit_mont_{bolso_id}")
@@ -211,6 +209,24 @@ else:
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Error al actualizar: {e}")
+                            
+                            st.markdown("---")
+                            st.markdown("🗑️ **Zona de Eliminación**")
+                            confirmar_borrado_propietario = st.checkbox("Confirmo que deseo eliminar este bolso permanentemente", key=f"chk_del_{bolso_id}")
+                            if st.button("Eliminar este Bolso", key=f"btn_delete_propietario_{bolso_id}"):
+                                if confirmar_borrado_propietario:
+                                    try:
+                                        # Eliminar registros dependientes
+                                        supabase.table("detalles_bolso").delete().eq("bolso_id", bolso_id).execute()
+                                        supabase.table("compartidos").delete().eq("bolso_id", bolso_id).execute()
+                                        # Eliminar bolso principal
+                                        supabase.table("bolsos").delete().eq("id", bolso_id).execute()
+                                        st.success("¡Bolso eliminado con éxito!")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Error al eliminar el bolso: {e}")
+                                else:
+                                    st.error("Debes marcar la casilla de confirmación para eliminar.")
                         
                         st.markdown("---")
                         st.markdown("### 🗓️ Cronograma, Participantes y Estados")
@@ -407,6 +423,22 @@ else:
                             col3.metric("Pozo Total", f"{simbolo}{pozo_total:,.2f}")
                             col4.metric("Frecuencia", bolso['frecuencia'])
                             
+                            # Botón para salir/remover bolso compartido
+                            with st.popover("⚙️ Opciones de Colaborador"):
+                                st.markdown("🗑️ **Dejar de ver este bolso**")
+                                st.write("Si ya no deseas participar o ver este bolso compartido, puedes removerlo de tu lista.")
+                                chk_salir = st.checkbox("Confirmo que deseo salir de este bolso compartido", key=f"chk_salir_{b_id}")
+                                if st.button("Remover de mis compartidos", key=f"btn_salir_{b_id}"):
+                                    if chk_salir:
+                                        try:
+                                            supabase.table("compartidos").delete().eq("bolso_id", b_id).eq("email_colaborador", email_usuario).execute()
+                                            st.success("Te has removido de este bolso exitosamente.")
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Error al salir del bolso: {e}")
+                                    else:
+                                        st.error("Debes marcar la casilla de confirmación.")
+
                             st.markdown("---")
                             resp_det = supabase.table("detalles_bolso").select("*").eq("bolso_id", b_id).execute()
                             datos_existentes = resp_det.data if resp_det.data else []
