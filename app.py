@@ -12,17 +12,31 @@ st.set_page_config(
     layout="wide",
 )
 
-# --- GESTOR DE COOKIES Y RECUPERACIÓN AUTOMÁTICA ---
+# --- 1. INICIALIZAR SUPABASE PRIMERO ---
+@st.cache_resource
+def init_supabase() -> Client:
+    raw_url = str(st.secrets["SUPABASE_URL"]).strip()
+    if "/rest/v1" in raw_url:
+        raw_url = raw_url.split("/rest/v1")[0]
+    raw_url = raw_url.rstrip("/")
+    key = str(st.secrets["SUPABASE_KEY"]).strip()
+    return create_client(raw_url, key)
+
+supabase = init_supabase()
+
+# --- 2. GESTOR DE COOKIES Y ESTADO ---
 cookie_manager = st_cookie.CookieManager()
 
-# Forzamos un pequeño retraso de lectura si la cookie no se ha sincronizado
+if "usuario" not in st.session_state:
+    st.session_state["usuario"] = None
+
+# --- 3. RECUPERAR SESIÓN ---
 if "cookie_loaded" not in st.session_state:
     st.session_state["cookie_loaded"] = True
     st.rerun()
 
 device_token_cookie = cookie_manager.get(cookie="dispositivo_confiable_token_bolsos")
 
-# --- RECUPERAR SESIÓN POR DISPOSITIVO ---
 if st.session_state["usuario"] is None and device_token_cookie:
     try:
         verificacion_disp = (
