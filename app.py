@@ -12,9 +12,9 @@ st.set_page_config(
     layout="wide",
 )
 
-# --- GESTOR DE COOKIES PARA PERSISTENCIA DE SESIÓN ---
+# --- GESTOR DE COOKIES ---
 cookie_manager = st_cookie.CookieManager()
-device_token_cookie = cookie_manager.get(cookie="nexus_session_token_bolsos")
+device_token_cookie = cookie_manager.get(cookie="dispositivo_confiable_token_bolsos")
 
 # --- INICIALIZAR SUPABASE ---
 @st.cache_resource
@@ -32,7 +32,7 @@ supabase = init_supabase()
 if "usuario" not in st.session_state:
     st.session_state["usuario"] = None
 
-# --- VALIDACIÓN AUTOMÁTICA DE SESIÓN PERSISTENTE (ESTILO NEXUS) ---
+# --- RECUPERAR Y VALIDAR SESIÓN POR DISPOSITIVO ---
 if st.session_state["usuario"] is None and device_token_cookie:
     try:
         verificacion_disp = (
@@ -53,12 +53,12 @@ if st.session_state["usuario"] is None and device_token_cookie:
 
             st.session_state["usuario"] = UserDummy(user_id_asociado, correo_asociado)
         else:
-            cookie_manager.delete("nexus_session_token_bolsos")
+            cookie_manager.delete("dispositivo_confiable_token_bolsos")
             st.session_state["usuario"] = None
     except Exception:
         st.session_state["usuario"] = None
 
-# --- PANTALLA DE ACCESO (LOGIN / REGISTRO) ---
+# --- PANTALLA DE LOGIN / REGISTRO ---
 if st.session_state["usuario"] is None:
     st.title("💰 App de Gestión de Bolsos (Sanes)")
     st.markdown("Por favor, inicia sesión o regístrate para continuar.")
@@ -67,9 +67,8 @@ if st.session_state["usuario"] is None:
     email = st.text_input("Correo electrónico", key="main_email_auth")
     password = st.text_input("Contraseña", type="password", key="main_pass_auth")
     
-    # Checkbox para recordar sesión en el dispositivo
     recordar_dispositivo = st.checkbox(
-        "Mantener sesión iniciada en este dispositivo",
+        "Confiar en este dispositivo (Mantener sesión abierta solo aquí)",
         value=True,
         key="main_chk_dispositivo"
     )
@@ -83,16 +82,15 @@ if st.session_state["usuario"] is None:
                     
                     if recordar_dispositivo:
                         nuevo_token = str(uuid.uuid4())
-                        # Guardar cookie por 1 año
                         cookie_manager.set(
-                            "nexus_session_token_bolsos", nuevo_token, max_age=31536000
+                            "dispositivo_confiable_token_bolsos", nuevo_token, max_age=31536000
                         )
                         try:
                             supabase.table("dispositivos_confiados").insert({
                                 "user_id": res.user.id,
                                 "device_token": nuevo_token,
                                 "email": res.user.email,
-                                "nombre_dispositivo": "Sesión Persistente Confiable",
+                                "nombre_dispositivo": "Dispositivo Confiable Bolsos",
                             }).execute()
                         except Exception:
                             pass
@@ -127,7 +125,7 @@ else:
                 ).execute()
             except Exception:
                 pass
-            cookie_manager.delete("nexus_session_token_bolsos")
+            cookie_manager.delete("dispositivo_confiable_token_bolsos")
             
         st.session_state["usuario"] = None
         st.rerun()
@@ -147,9 +145,9 @@ else:
                             supabase.table("dispositivos_confiados").delete().eq(
                                 "device_token", device_token_cookie
                             ).execute()
-                        except Exception:
+                        except:
                             pass
-                        cookie_manager.delete("nexus_session_token_bolsos")
+                        cookie_manager.delete("dispositivo_confiable_token_bolsos")
                     
                     st.session_state["usuario"] = None
                     st.success("Tu cuenta ha sido eliminada permanentemente.")
@@ -161,16 +159,130 @@ else:
 
     st.title("💼 Panel de Control de Bolsos y Sanes")
 
-    # --- DEFINICIÓN DE PESTAÑAS PRINCIPALES ---
-    tab_mis_bolsos, tab_crear, tab_compartidos, tab_permisos, tab_divisas = st.tabs([
-        "📂 Mis Bolsos", 
-        "➕ Nuevo Bolso", 
-        "🤝 Bolsos Compartidos", 
-        "⚙️ Control de Permisos",
-        "💱 Compra/Venta Dólares"
-    ])
+    # PESTAÑA 5: Compra/Venta Dólares
+    with tab_divisas:
+        st.subheader("💱 Control de Compra y Venta de Dólares")
+        st.write("Lleva el control de quién te vende, a quién le vendes y los estados de entrega de dinero.")
+        
+        # Estructura inicial en sesión si no existe
+        if "divisas_registros" not in st.session_state:
+            st.session_state["divisas_registros"] = [
+                {
+                    "Operación": "VENDIDO",
+                    "Monto ($)": 100.0,
+                    "Nombre": "Carlos Silva",
+                    "Me Entregaron": True,
+                    "Entregué": False
+                },
+                {
+                    "Operación": "COMPRADO",
+                    "Monto ($)": 50.0,
+                    "Nombre": "Ana Torres",
+                    "Me Entregaron": False,
+                    "Entregué": True
+                }
+            ]
 
-    # PESTAÑA 1: Mis Bolsos
+        # Formulario para agregar nueva operación
+        with st.form("form_nueva_divisa", clear_on_submit=True):
+            st.markdown("### ➕ Registrar Nueva Operación")
+            col_f1, col_f2, col_f3 = st.columns(3)
+            with col_f1:
+                tipo_operacion = st.selectbox("Operación", ["VENDIDO", "COMPRADO"], key="nuevo_tipo_op")
+            with col_f2:
+                monto_divisa = st.number_input("Monto en Dólares ($)", min_value=0.0, format="%.2f", value=50.0, key="nuevo_monto_op")
+            with col_f3:
+                nombre_persona = st.text_input("Nombre de la Persona", placeholder="Ej. Juan Pérez", key="nuevo_nombre_op")
+            
+            st.markdown("---")
+            st.markdown("📦 **Estado de Entrega inicial:**")
+            col_c1, col_c2 = st.columns(2)
+            with col_c1:
+                chk_me_entregaron = st.checkbox("¿Me entregaron el dinero?", key="nuevo_chk_entregaron")
+            with col_c2:
+                chk_entregue = st.checkbox("¿Ya entregué el dinero?", key="nuevo_chk_entregue")
+                
+            btn_guardar_divisa = st.form_submit_button("Guardar Operación", type="primary")
+            
+            if btn_guardar_divisa:
+                if nombre_persona.strip():
+                    st.session_state["divisas_registros"].append({
+                        "Operación": tipo_operacion,
+                        "Monto ($)": monto_divisa,
+                        "Nombre": nombre_persona.strip(),
+                        "Me Entregaron": chk_me_entregaron,
+                        "Entregué": chk_entregue
+                    })
+                    st.success("¡Operación registrada con éxito!")
+                    st.rerun()
+                else:
+                    st.warning("Por favor ingresa el nombre de la persona.")
+
+        st.markdown("---")
+        st.subheader("📋 Listado y Control de Operaciones")
+        st.write("Puedes editar directamente los nombres o marcar las casillas de verificación para actualizar el estado al instante.")
+
+        if st.session_state["divisas_registros"]:
+            # Convertimos la lista a DataFrame para usar un editor de tabla fluido y limpio
+            df_divisas = pd.DataFrame(st.session_state["divisas_registros"])
+            
+            # Configuramos las columnas del editor
+            columnas_config_divisas = {
+                "Operación": st.column_config.SelectboxColumn(
+                    "Operación",
+                    options=["VENDIDO", "COMPRADO"],
+                    required=True,
+                    width="medium"
+                ),
+                "Monto ($)": st.column_config.NumberColumn(
+                    "Monto ($)",
+                    format="$%.2f",
+                    min_value=0.0,
+                    required=True,
+                    width="small"
+                ),
+                "Nombre": st.column_config.TextColumn(
+                    "Nombre (Cliente / Proveedor)",
+                    required=True,
+                    width="large"
+                ),
+                "Me Entregaron": st.column_config.CheckboxColumn(
+                    "Me Entregaron",
+                    required=True,
+                    width="small"
+                ),
+                "Entregué": st.column_config.CheckboxColumn(
+                    "Entregué",
+                    required=True,
+                    width="small"
+                ),
+            }
+
+            df_divisas_editado = st.data_editor(
+                df_divisas,
+                column_config=columnas_config_divisas,
+                use_container_width=True,
+                hide_index=True,
+                key="editor_tabla_divisas"
+            )
+
+            # Botones de acción organizados con sintaxis limpia
+            col_bt_1, col_bt_2 = st.columns([1, 4])
+            
+            with col_bt_1:
+                if st.button("💾 Guardar Cambios", type="primary", key="btn_guardar_cambios_divisas"):
+                    st.session_state["divisas_registros"] = df_divisas_editado.to_dict(orient="records")
+                    st.success("¡Cambios actualizados correctamente!")
+                    st.rerun()
+                    
+            with col_bt_2:
+                if st.button("🗑️ Limpiar Todo el Historial", key="btn_limpiar_divisas"):
+                    st.session_state["divisas_registros"] = []
+                    st.rerun()
+        else:
+            st.info("No hay operaciones de compra/venta registradas todavía.")
+
+    # PESTAÑA 1: Ver tus bolsos
     with tab_mis_bolsos:
         col_cabecera_1, col_cabecera_2 = st.columns([3, 1])
         with col_cabecera_1:
@@ -394,7 +506,7 @@ else:
         except Exception as e:
             st.error(f"Error al cargar los bolsos: {e}")
 
-    # PESTAÑA 2: Nuevo Bolso
+    # PESTAÑA 2: Crear un nuevo bolso
     with tab_crear:
         st.subheader("Crear un Nuevo Bolso / San")
         
@@ -445,7 +557,7 @@ else:
             else:
                 st.warning("Por favor ingresa al menos el nombre del bolso.")
 
-    # PESTAÑA 3: Bolsos Compartidos
+    # PESTAÑA 3: Bolsos compartidos conmigo
     with tab_compartidos:
         col_comp_1, col_comp_2 = st.columns([3, 1])
         with col_comp_1:
@@ -648,7 +760,7 @@ else:
         except Exception as e:
             st.error(f"Error al cargar bolsos compartidos: {e}")
 
-    # PESTAÑA 4: Control de Permisos
+    # PESTAÑA 4: Gestión de permisos
     with tab_permisos:
         st.subheader("Configuración de Colaboradores")
         st.write("Comparte el acceso a tus bolsos ingresando el correo exacto del colaborador.")
@@ -691,117 +803,77 @@ else:
     # PESTAÑA 5: Compra/Venta Dólares
     with tab_divisas:
         st.subheader("💱 Control de Compra y Venta de Dólares")
-        st.write("Lleva el control de quién te vende, a quién le vendes y los estados de entrega de dinero.")
+        st.write("Registra tus operaciones de divisas, asigna nombres a los involucrados y marca los estados de entrega.")
         
+        # Inicializamos una estructura en st.session_state si no existe para almacenar filas de compra/venta de manera temporal o simulada por sesión
         if "divisas_registros" not in st.session_state:
             st.session_state["divisas_registros"] = [
-                {
-                    "Operación": "VENDIDO",
-                    "Monto ($)": 100.0,
-                    "Nombre": "Carlos Silva",
-                    "Me Entregaron": True,
-                    "Entregué": False
-                },
-                {
-                    "Operación": "COMPRADO",
-                    "Monto ($)": 50.0,
-                    "Nombre": "Ana Torres",
-                    "Me Entregaron": False,
-                    "Entregué": True
-                }
+                {"tipo": "Venta", "monto": 100.0, "contraparte": "Juan Pérez", "entregaron": True, "entregue": False},
+                {"tipo": "Compra", "monto": 50.0, "contraparte": "María Gómez", "entregaron": False, "entregue": True}
             ]
 
         with st.form("form_nueva_divisa", clear_on_submit=True):
-            st.markdown("### ➕ Registrar Nueva Operación")
             col_f1, col_f2, col_f3 = st.columns(3)
             with col_f1:
-                tipo_operacion = st.selectbox("Operación", ["VENDIDO", "COMPRADO"], key="nuevo_tipo_op")
+                tipo_operacion = st.selectbox("Operación", ["VENDIDO", "COMPRADO"])
             with col_f2:
-                monto_divisa = st.number_input("Monto en Dólares ($)", min_value=0.0, format="%.2f", value=50.0, key="nuevo_monto_op")
+                monto_divisa = st.number_input("Monto en Dólares ($)", min_value=0.0, format="%.2f", value=50.0)
             with col_f3:
-                nombre_persona = st.text_input("Nombre de la Persona", placeholder="Ej. Juan Pérez", key="nuevo_nombre_op")
+                nombre_contraparte = st.text_input("Nombre (Cliente / Proveedor)")
             
             st.markdown("---")
-            st.markdown("📦 **Estado de Entrega inicial:**")
+            st.markdown("📦 **Estado de Entrega:**")
             col_c1, col_c2 = st.columns(2)
             with col_c1:
-                chk_me_entregaron = st.checkbox("¿Me entregaron el dinero?", key="nuevo_chk_entregaron")
+                chk_me_entregaron = st.checkbox("Me entregaron")
             with col_c2:
-                chk_entregue = st.checkbox("¿Ya entregué el dinero?", key="nuevo_chk_entregue")
+                chk_entregue = st.checkbox("Entregué")
                 
-            btn_guardar_divisa = st.form_submit_button("Guardar Operación", type="primary")
+            btn_guardar_divisa = st.form_submit_button("Registrar Operación", type="primary")
             
             if btn_guardar_divisa:
-                if nombre_persona.strip():
+                if nombre_contraparte:
                     st.session_state["divisas_registros"].append({
-                        "Operación": tipo_operacion,
-                        "Monto ($)": monto_divisa,
-                        "Nombre": nombre_persona.strip(),
-                        "Me Entregaron": chk_me_entregaron,
-                        "Entregué": chk_entregue
+                        "tipo": tipo_operacion,
+                        "monto": monto_divisa,
+                        "contraparte": nombre_contraparte,
+                        "entregaron": chk_me_entregaron,
+                        "entregue": chk_entregue
                     })
                     st.success("¡Operación registrada con éxito!")
                     st.rerun()
                 else:
-                    st.warning("Por favor ingresa el nombre de la persona.")
+                    st.warning("Por favor ingresa un nombre válido.")
 
         st.markdown("---")
-        st.subheader("📋 Listado y Control de Operaciones")
-        st.write("Puedes editar directamente los nombres o marcar las casillas de verificación para actualizar el estado al instante.")
-
+        st.subheader("📋 Historial de Operaciones Registradas")
+        
         if st.session_state["divisas_registros"]:
-            df_divisas = pd.DataFrame(st.session_state["divisas_registros"])
-            
-            columnas_config_divisas = {
-                "Operación": st.column_config.SelectboxColumn(
-                    "Operación",
-                    options=["VENDIDO", "COMPRADO"],
-                    required=True,
-                    width="medium"
-                ),
-                "Monto ($)": st.column_config.NumberColumn(
-                    "Monto ($)",
-                    format="$%.2f",
-                    min_value=0.0,
-                    required=True,
-                    width="small"
-                ),
-                "Nombre": st.column_config.TextColumn(
-                    "Nombre (Cliente / Proveedor)",
-                    required=True,
-                    width="large"
-                ),
-                "Me Entregaron": st.column_config.CheckboxColumn(
-                    "Me Entregaron",
-                    required=True,
-                    width="small"
-                ),
-                "Entregué": st.column_config.CheckboxColumn(
-                    "Entregué",
-                    required=True,
-                    width="small"
-                ),
-            }
-
-            df_divisas_editado = st.data_editor(
-                df_divisas,
-                column_config=columnas_config_divisas,
-                use_container_width=True,
-                hide_index=True,
-                key="editor_tabla_divisas"
-            )
-
-            col_bt_1, col_bt_2 = st.columns([1, 4])
-            
-            with col_bt_1:
-                if st.button("💾 Guardar Cambios", type="primary", key="btn_guardar_cambios_divisas"):
-                    st.session_state["divisas_registros"] = df_divisas_editado.to_dict(orient="records")
-                    st.success("¡Cambios actualizados correctamente!")
-                    st.rerun()
+            for idx, op in enumerate(st.session_state["divisas_registros"]):
+                with st.container():
+                    col_info_1, col_info_2, col_info_3, col_info_4 = st.columns([1.5, 2, 2, 2])
                     
-            with col_bt_2:
-                if st.button("🗑️ Limpiar Todo el Historial", key="btn_limpiar_divisas"):
-                    st.session_state["divisas_registros"] = []
-                    st.rerun()
+                    with col_info_1:
+                        badge_color = "🔴" if op["tipo"] == "Venta" else "🟢"
+                        st.markdown(f"**{badge_color} {op['tipo']}**")
+                        st.text(f"${op['monto']:,.2f}")
+                        
+                    with col_info_2:
+                        st.markdown(f"**Nombre:**")
+                        # Campo de texto editable para el nombre abajo de Vendido/Comprado
+                        nuevo_nombre_op = st.text_input(f"Nombre_{idx}", value=op["contraparte"], key=f"div_nom_{idx}", label_visibility="collapsed")
+                        st.session_state["divisas_registros"][idx]["contraparte"] = nuevo_nombre_op
+                        
+                    with col_info_3:
+                        # Casilla de verificación para Me Entregaron
+                        val_entregaron = st.checkbox("Me entregaron", value=op["entregaron"], key=f"div_entregaron_{idx}")
+                        st.session_state["divisas_registros"][idx]["entregaron"] = val_entregaron
+                        
+                    with col_info_4:
+                        # Casilla de verificación para Entregué
+                        val_entregue = st.checkbox("Entregué", value=op["entregue"], key=f"div_entregue_{idx}")
+                        st.session_state["divisas_registros"][idx]["entregue"] = val_entregue
+                        
+                    st.markdown("---")
         else:
             st.info("No hay operaciones de compra/venta registradas todavía.")
