@@ -74,7 +74,7 @@ else:
         "⚙️ Control de Permisos"
     ])
 
-    # PESTAÑA 1: Ver bolsos y matriz interactiva protegida y editable
+    # PESTAÑA 1: Ver bolsos y matriz interactiva con selectores desplegables
     with tab_mis_bolsos:
         st.subheader("Tus Bolsos Activos")
         
@@ -95,7 +95,7 @@ else:
                         
                         st.markdown("---")
                         st.markdown("### 🗓️ Cronograma, Participantes y Estados")
-                        st.info("Escribe los nombres de los participantes y selecciona el estado de cada fecha (Pendiente, Toca Cobrar, Pagado, etc.).")
+                        st.info("Escribe los nombres de los participantes y utiliza los menús desplegables en cada fecha para cambiar los estados.")
                         
                         fechas_quincenales = ["15-sept", "30-sept", "15-oct", "30-oct", "15-nov", "30-nov", "15-dic"]
                         
@@ -103,7 +103,7 @@ else:
                         resp_det = supabase.table("detalles_bolso").select("*").eq("bolso_id", bolso_id).execute()
                         datos_existentes = resp_det.data if resp_det.data else []
                         
-                        # Si no hay registros creados aún, inicializarlos en blanco/automático
+                        # Si no hay registros creados aún, inicializarlos en blanco/automático con nombres genéricos
                         if not datos_existentes:
                             nuevos_filas = []
                             for i in range(1, total_puestos + 1):
@@ -134,9 +134,32 @@ else:
                         
                         df_matriz = pd.DataFrame(list(matriz_dict.values()))
                         
-                        # Editor de tabla interactiva en Streamlit
+                        # Opciones exactas para el menú desplegable en cada celda de fecha
+                        opciones_estado = [
+                            "⏳ Pendiente", 
+                            "🟢 Toca Cobrar", 
+                            f"✅ Pagado ({email_corto})", 
+                            f"💰 Cobrado ({email_corto})"
+                        ]
+                        
+                        # Configurar columnas (Nro bloqueado, Participante texto, Fechas con selectores)
+                        column_config_dict = {
+                            "Nro. Puesto": st.column_config.NumberColumn("Nro.", disabled=True, width="small"),
+                            "Participante": st.column_config.TextColumn("Participante", width="medium"),
+                        }
+                        
+                        for fecha in fechas_quincenales:
+                            column_config_dict[fecha] = st.column_config.SelectboxColumn(
+                                label=fecha,
+                                options=opciones_estado,
+                                required=True,
+                                width="medium"
+                            )
+
+                        # Editor interactivo con menús desplegables
                         df_editado = st.data_editor(
                             df_matriz, 
+                            column_config=column_config_dict,
                             use_container_width=True, 
                             hide_index=True,
                             key=f"editor_{bolso_id}"
@@ -144,7 +167,6 @@ else:
                         
                         if st.button("Guardar Cambios del Cronograma", key=f"btn_save_{bolso_id}", type="primary"):
                             try:
-                                # Actualizar cada celda modificada en la base de datos
                                 for index, row in df_editado.iterrows():
                                     puesto = row["Nro. Puesto"]
                                     nombre_part = row["Participante"]
