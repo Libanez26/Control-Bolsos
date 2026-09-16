@@ -136,7 +136,7 @@ else:
                                 for idx, fecha in enumerate(fechas_quincenales):
                                     existe = any(d["nro_puesto"] == i and d["fecha"] == fecha for d in datos_existentes)
                                     if not existe:
-                                        estado_inicial = "🟢 Toca Cobrar" if (idx + 1) == i else "⏳ Pendiente"
+                                        estado_inicial = "🟢 Recibe Pozo" if (idx + 1) == i else "⏳ Pendiente"
                                         supabase.table("detalles_bolso").insert({
                                             "bolso_id": bolso_id,
                                             "nro_puesto": i,
