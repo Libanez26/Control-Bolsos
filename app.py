@@ -57,7 +57,7 @@ if st.session_state["usuario"] is None:
 else:
     # --- APLICACIÓN PRINCIPAL ---
     usuario_actual = st.session_state["usuario"]
-    email_usuario = usuario_actual.email
+    email_usuario = usuario_actual.email.strip().lower()
     email_corto = email_usuario.split("@")[0]
     
     st.sidebar.markdown(f"👤 **Usuario:** {email_corto}")
@@ -222,11 +222,10 @@ else:
                 else:
                     st.warning("Por favor ingresa al menos el nombre del bolso.")
 
-    # PESTAÑA 3: Bolsos compartidos conmigo (AHORA CONECTADO)
+    # PESTAÑA 3: Bolsos compartidos conmigo
     with tab_compartidos:
         st.subheader("🤝 Bolsos Compartidos Conmigo")
         try:
-            # Buscar bolsos donde el correo actual esté en la tabla compartidos
             resp_comp = supabase.table("compartidos").select("bolso_id, nivel").eq("email_colaborador", email_usuario).execute()
             shared_records = resp_comp.data if resp_comp.data else []
             
@@ -235,7 +234,6 @@ else:
                     b_id = rec["bolso_id"]
                     nivel_acceso = rec["nivel"]
                     
-                    # Obtener info del bolso
                     b_info_resp = supabase.table("bolsos").select("*").eq("id", b_id).execute()
                     if b_info_resp.data:
                         bolso = b_info_resp.data[0]
@@ -244,7 +242,7 @@ else:
                         pozo_total = monto_cuota * total_puestos
                         
                         with st.expander(f"📦 {bolso['nombre']} (Compartido - {nivel_acceso})"):
-                            st.info(Access := f"Tienes nivel de acceso: **{nivel_acceso}**")
+                            st.info(f"Tienes nivel de acceso: **{nivel_acceso}**")
                             col1, col2, col3, col4 = st.columns(4)
                             col1.metric("Cuota", f"${monto_cuota:,.2f}")
                             col2.metric("Puestos", total_puestos)
@@ -303,12 +301,12 @@ else:
         except Exception as e:
             st.error(f"Error al cargar bolsos compartidos: {e}")
 
-    # PESTAÑA 4: Gestión de permisos (AHORA CONECTADO A LA BASE DE DATOS)
+    # PESTAÑA 4: Gestión de permisos
     with tab_permisos:
         st.subheader("Configuración de Colaboradores")
         st.write("Comparte el acceso a tus bolsos ingresando el correo exacto del colaborador.")
         
-        with st.form("form_permisos"):
+        with st.form("form_permisos", clear_on_submit=True):
             correo_colaborador = st.text_input("Correo electrónico del colaborador")
             try:
                 resp_b = supabase.table("bolsos").select("id, nombre").eq("creador_id", usuario_actual.id).execute()
@@ -324,15 +322,15 @@ else:
             if submit_permiso:
                 if correo_colaborador and selected_nombre != "No hay bolsos":
                     bolso_id_seleccionado = mis_b_nombres[selected_nombre]
+                    correo_limpio = correo_colaborador.strip().lower()
                     try:
-                        # Guardar el permiso en la tabla 'compartidos' de Supabase
+                        # Guardar el permiso en la tabla 'compartidos'
                         supabase.table("compartidos").insert({
                             "bolso_id": bolso_id_seleccionado,
-                            "email_colaborador": correo_colaborador.strip().lower(),
+                            "email_colaborador": correo_limpio,
                             "nivel": nivel_permiso
                         }).execute()
-                        st.success(f"¡Acceso otorgado exitosamente a {correo_colaborador} para el bolso '{selected_nombre}'!")
-                        st.rerun()
+                        st.success(f"¡Acceso otorgado exitosamente a {correo_limpio} para el bolso '{selected_nombre}'!")
                     except Exception as e:
                         st.error(f"Error al otorgar acceso: {e}")
                 else:
