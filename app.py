@@ -12,7 +12,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# --- 1. INICIALIZAR SUPABASE PRIMERO ---
+# --- 1. INICIALIZAR SUPABASE ---
 @st.cache_resource
 def init_supabase() -> Client:
     raw_url = str(st.secrets["SUPABASE_URL"]).strip()
@@ -22,194 +22,88 @@ def init_supabase() -> Client:
     key = str(st.secrets["SUPABASE_KEY"]).strip()
     return create_client(raw_url, key)
 
-supabase = init_supabase()
-
-# --- 2. INICIALIZAR GESTOR DE COOKIES ---
-cookie_manager = st_cookie.CookieManager()
-device_token_cookie = cookie_manager.get(cookie="dispositivo_confiable_token")
-
-# --- 3. INICIALIZACIÓN DE SERVICIOS ---
-@st.cache_resource
-def init_supabase() -> Client:
-  raw_url = str(st.secrets["SUPABASE_URL"]).strip()
-  if "/rest/v1" in raw_url:
-    raw_url = raw_url.split("/rest/v1")[0]
-  raw_url = raw_url.rstrip("/")
-
-  key = str(st.secrets["SUPABASE_KEY"]).strip()
-  return create_client(raw_url, key)
-
-
 try:
-  supabase = init_supabase()
+    supabase = init_supabase()
 except Exception as e:
-  st.error(f"Error al conectar con Supabase: {e}")
+    st.error(f"Error al conectar con Supabase: {e}")
 
-# --- 4. ESTADO DE SESIÓN ---
+# --- 2. GESTOR DE COOKIES ---
+cookie_manager = st_cookie.CookieManager()
+device_token_cookie = cookie_manager.get(cookie="dispositivo_confiable_token_bolsos")
+
+# --- 3. ESTADO DE SESIÓN ---
 if "usuario" not in st.session_state:
-  st.session_state["usuario"] = None
+    st.session_state["usuario"] = None
 if "pensum_df" not in st.session_state:
-  st.session_state["pensum_df"] = None
+    st.session_state["pensum_df"] = None
 if "evaluaciones" not in st.session_state:
-  st.session_state["evaluaciones"] = {}
+    st.session_state["evaluaciones"] = {}
 if "horario_df" not in st.session_state:
-  st.session_state["horario_df"] = None
+    st.session_state["horario_df"] = None
 if "escala_df" not in st.session_state:
-  st.session_state["escala_df"] = pd.DataFrame([
-      {"Nivel de logro de la asignatura": "00% - 05%", "Calificación Cuantitativa": "01", "Calificación Cualitativa": "MUY DEFICIENTE"},
-      {"Nivel de logro de la asignatura": "06% - 11%", "Calificación Cuantitativa": "02", "Calificación Cualitativa": "MUY DEFICIENTE"},
-      {"Nivel de logro de la asignatura": "12% - 17%", "Calificación Cuantitativa": "03", "Calificación Cualitativa": "MUY DEFICIENTE"},
-      {"Nivel de logro de la asignatura": "18% - 23%", "Calificación Cuantitativa": "04", "Calificación Cualitativa": "MUY DEFICIENTE"},
-      {"Nivel de logro de la asignatura": "24% - 29%", "Calificación Cuantitativa": "05", "Calificación Cualitativa": "MUY DEFICIENTE"},
-      {"Nivel de logro de la asignatura": "30% - 34%", "Calificación Cuantitativa": "06", "Calificación Cualitativa": "DEFICIENTE"},
-      {"Nivel de logro de la asignatura": "35% - 39%", "Calificación Cuantitativa": "07", "Calificación Cualitativa": "DEFICIENTE"},
-      {"Nivel de logro de la asignatura": "40% - 44%", "Calificación Cuantitativa": "08", "Calificación Cualitativa": "DEFICIENTE"},
-      {"Nivel de logro de la asignatura": "45% - 49%", "Calificación Cuantitativa": "09", "Calificación Cualitativa": "DEFICIENTE"}
-  ])
-if "mensajes_asistente" not in st.session_state:
-  st.session_state["mensajes_asistente"] = [{
-      "role": "assistant",
-      "content": (
-          "¡Hola! Soy tu asistente virtual. ¿En qué te puedo ayudar hoy?"
-      ),
-  }]
+    st.session_state["escala_df"] = pd.DataFrame([
+        {"Nivel de logro de la asignatura": "00% - 05%", "Calificación Cuantitativa": "01", "Calificación Cualitativa": "MUY DEFICIENTE"},
+        {"Nivel de logro de la asignatura": "06% - 11%", "Calificación Cuantitativa": "02", "Calificación Cualitativa": "MUY DEFICIENTE"},
+        {"Nivel de logro de la asignatura": "12% - 17%", "Calificación Cuantitativa": "03", "Calificación Cualitativa": "MUY DEFICIENTE"},
+        {"Nivel de logro de la asignatura": "18% - 23%", "Calificación Cuantitativa": "04", "Calificación Cualitativa": "MUY DEFICIENTE"},
+        {"Nivel de logro de la asignatura": "24% - 29%", "Calificación Cuantitativa": "05", "Calificación Cualitativa": "MUY DEFICIENTE"},
+        {"Nivel de logro de la asignatura": "30% - 34%", "Calificación Cuantitativa": "06", "Calificación Cualitativa": "DEFICIENTE"},
+        {"Nivel de logro de la asignatura": "35% - 39%", "Calificación Cuantitativa": "07", "Calificación Cualitativa": "DEFICIENTE"},
+        {"Nivel de logro de la asignatura": "40% - 44%", "Calificación Cuantitativa": "08", "Calificación Cualitativa": "DEFICIENTE"},
+        {"Nivel de logro de la asignatura": "45% - 49%", "Calificación Cuantitativa": "09", "Calificación Cualitativa": "DEFICIENTE"}
+    ])
 
-
-# --- 5. FUNCIONES AUXILIARES (BACKOFF Y DB) ---
-def generar_con_reintentos(client, model, contents, config=None, max_intentos=3):
-    intentos = 0
-    espera = 2
-    while intentos < max_intentos:
-        try:
-            if config:
-                return client.models.generate_content(model=model, contents=contents, config=config)
-            else:
-                return client.models.generate_content(model=model, contents=contents)
-        except Exception as e:
-            intentos += 1
-            if intentos >= max_intentos:
-                raise e
-            time.sleep(espera)
-            espera *= 2
-
+# --- 4. FUNCIONES DE BASE DE DATOS ---
 def cargar_datos_usuario(user_id):
-  try:
-    res = (
-        supabase.table("perfiles_usuario").select("*").eq("id", user_id).execute()
-    )
-    if res.data and len(res.data) > 0:
-      datos = res.data[0]
-      if datos.get("pensum_data"):
-        st.session_state["pensum_df"] = pd.DataFrame(datos["pensum_data"])
-      
-      if datos.get("evaluaciones_data"):
-        evals_cargadas = datos["evaluaciones_data"]
-        for cod, info in evals_cargadas.items():
-          if "plan" in info:
-            for item in info["plan"]:
-              if "Fecha" in item and isinstance(item["Fecha"], str):
-                try:
-                  item["Fecha"] = datetime.datetime.strptime(item["Fecha"], "%Y-%m-%d").date()
-                except ValueError:
-                  item["Fecha"] = datetime.date.today()
-        st.session_state["evaluaciones"] = evals_cargadas
-
-      if datos.get("horario_data"):
-        st.session_state["horario_df"] = pd.DataFrame(datos["horario_data"])
-
-      if datos.get("escala_data"):
-        st.session_state["escala_df"] = pd.DataFrame(datos["escala_data"])
-  except Exception as e:
-    st.error(f"Error cargando datos de la base de datos: {e}")
-
+    try:
+        res = supabase.table("perfiles_usuario").select("*").eq("id", user_id).execute()
+        if res.data and len(res.data) > 0:
+            datos = res.data[0]
+            if datos.get("pensum_data"):
+                st.session_state["pensum_df"] = pd.DataFrame(datos["pensum_data"])
+            if datos.get("evaluaciones_data"):
+                st.session_state["evaluaciones"] = datos["evaluaciones_data"]
+    except Exception as e:
+        pass
 
 def guardar_datos_usuario():
-  if not st.session_state["usuario"]:
-    return
-
-  user_id = st.session_state["usuario"].id
-  correo = st.session_state["usuario"].email
-
-  pensum_json = (
-      st.session_state["pensum_df"].to_dict("records")
-      if st.session_state["pensum_df"] is not None
-      else None
-  )
-  
-  evals_json = {}
-  for cod, info in st.session_state["evaluaciones"].items():
-    evals_json[cod] = {
-        "estado": info.get("estado", "No Inscrita"),
-        "plan": []
+    if not st.session_state["usuario"]:
+        return
+    user_id = st.session_state["usuario"].id
+    correo = st.session_state["usuario"].email
+    data = {
+        "id": user_id,
+        "correo": correo,
     }
-    for item in info.get("plan", []):
-      item_copia = item.copy()
-      if "Fecha" in item_copia:
-        if isinstance(item_copia["Fecha"], (datetime.date, datetime.datetime)):
-          item_copia["Fecha"] = item_copia["Fecha"].strftime("%Y-%m-%d")
-      evals_json[cod]["plan"].append(item_copia)
-
-  horario_json = (
-      st.session_state["horario_df"].to_dict("records")
-      if st.session_state["horario_df"] is not None
-      else None
-  )
-
-  escala_json = (
-      st.session_state["escala_df"].to_dict("records")
-      if st.session_state["escala_df"] is not None
-      else None
-  )
-
-  data = {
-      "id": user_id,
-      "correo": correo,
-      "pensum_data": pensum_json,
-      "evaluaciones_data": evals_json,
-      "horario_data": horario_json,
-      "escala_data": escala_json,
-  }
-
-  try:
-    supabase.table("perfiles_usuario").upsert(data).execute()
-    st.toast("💾 Cambios guardados automáticamente", icon="☁️")
-  except Exception as e:
-    st.error(f"Error al guardar datos: {e}")
-
-
-# --- 6. RECUPERAR SESIÓN INDEPENDIENTE POR DISPOSITIVO (COOKIE) ---
-if st.session_state["usuario"] is None:
-  if device_token_cookie:
     try:
-      verificacion_disp = (
-          supabase.table("dispositivos_confiados")
-          .select("*")
-          .eq("device_token", device_token_cookie)
-          .execute()
-      )
-      if verificacion_disp.data and len(verificacion_disp.data) > 0:
-        user_id_asociado = verificacion_disp.data[0]["user_id"]
-        res_usuario = (
-            supabase.table("perfiles_usuario")
-            .select("*")
-            .eq("id", user_id_asociado)
-            .execute()
-        )
-        if res_usuario.data:
+        supabase.table("perfiles_usuario").upsert(data).execute()
+    except Exception as e:
+        pass
 
-          class UserDummy:
+# --- 5. RECUPERAR SESIÓN POR DISPOSITIVO (COOKIE) ---
+if st.session_state["usuario"] is None:
+    if device_token_cookie:
+        try:
+            verificacion_disp = (
+                supabase.table("dispositivos_confiados")
+                .select("*")
+                .eq("device_token", device_token_cookie)
+                .execute()
+            )
+            if verificacion_disp.data and len(verificacion_disp.data) > 0:
+                user_id_asociado = verificacion_disp.data[0]["user_id"]
+                correo_asociado = verificacion_disp.data[0].get("email", "usuario@bolsos.com")
+                
+                class UserDummy:
+                    def __init__(self, uid, uemail):
+                        self.id = uid
+                        self.email = uemail
 
-            def __init__(self, uid, uemail):
-              self.id = uid
-              self.email = uemail
-
-          correo_asociado = res_usuario.data[0].get("correo", "usuario@app.com")
-          st.session_state["usuario"] = UserDummy(user_id_asociado, correo_asociado)
-          cargar_datos_usuario(user_id_asociado)
-          st.rerun()
-    except Exception:
-      pass
-
+                st.session_state["usuario"] = UserDummy(user_id_asociado, correo_asociado)
+                cargar_datos_usuario(user_id_asociado)
+                st.rerun()
+        except Exception:
+            pass
 
 # --- PANTALLA DE LOGIN / REGISTRO ---
 if st.session_state["usuario"] is None:
@@ -276,8 +170,8 @@ if st.session_state["usuario"] is None:
 else:
     # --- APLICACIÓN PRINCIPAL ---
     usuario_actual = st.session_state["usuario"]
-    email_usuario = usuario_actual.email.strip().lower()
-    email_corto = email_usuario.split("@")[0]
+    email_usuario = getattr(usuario_actual, "email", "usuario@bolsos.com").strip().lower()
+    email_corto = email_usuario.split("@")[0] if "@" in email_usuario else "usuario"
     
     # --- PESTAÑAS PRINCIPALES ---
     tab_mis_bolsos, tab_crear, tab_compartidos, tab_permisos, tab_divisas = st.tabs([
