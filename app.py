@@ -12,9 +12,9 @@ st.set_page_config(
     layout="wide",
 )
 
-# --- GESTOR DE COOKIES PARA RECORDAR SESIÓN ---
+# --- GESTOR DE COOKIES PARA PERSISTENCIA DE SESIÓN ---
 cookie_manager = st_cookie.CookieManager()
-device_token_cookie = cookie_manager.get(cookie="dispositivo_confiable_token_bolsos")
+device_token_cookie = cookie_manager.get(cookie="nexus_session_token_bolsos")
 
 # --- INICIALIZAR SUPABASE ---
 @st.cache_resource
@@ -32,7 +32,7 @@ supabase = init_supabase()
 if "usuario" not in st.session_state:
     st.session_state["usuario"] = None
 
-# --- RECUPERAR Y VALIDAR SESIÓN POR DISPOSITIVO (RECORDAR USUARIO) ---
+# --- VALIDACIÓN AUTOMÁTICA DE SESIÓN PERSISTENTE (ESTILO NEXUS) ---
 if st.session_state["usuario"] is None and device_token_cookie:
     try:
         verificacion_disp = (
@@ -53,12 +53,12 @@ if st.session_state["usuario"] is None and device_token_cookie:
 
             st.session_state["usuario"] = UserDummy(user_id_asociado, correo_asociado)
         else:
-            cookie_manager.delete("dispositivo_confiable_token_bolsos")
+            cookie_manager.delete("nexus_session_token_bolsos")
             st.session_state["usuario"] = None
     except Exception:
         st.session_state["usuario"] = None
 
-# --- PANTALLA DE LOGIN / REGISTRO ---
+# --- PANTALLA DE ACCESO (LOGIN / REGISTRO) ---
 if st.session_state["usuario"] is None:
     st.title("💰 App de Gestión de Bolsos (Sanes)")
     st.markdown("Por favor, inicia sesión o regístrate para continuar.")
@@ -67,8 +67,9 @@ if st.session_state["usuario"] is None:
     email = st.text_input("Correo electrónico", key="main_email_auth")
     password = st.text_input("Contraseña", type="password", key="main_pass_auth")
     
+    # Checkbox para recordar sesión en el dispositivo
     recordar_dispositivo = st.checkbox(
-        "Confiar en este dispositivo (Mantener sesión abierta)",
+        "Mantener sesión iniciada en este dispositivo",
         value=True,
         key="main_chk_dispositivo"
     )
@@ -82,15 +83,16 @@ if st.session_state["usuario"] is None:
                     
                     if recordar_dispositivo:
                         nuevo_token = str(uuid.uuid4())
+                        # Guardar cookie por 1 año
                         cookie_manager.set(
-                            "dispositivo_confiable_token_bolsos", nuevo_token, max_age=31536000
+                            "nexus_session_token_bolsos", nuevo_token, max_age=31536000
                         )
                         try:
                             supabase.table("dispositivos_confiados").insert({
                                 "user_id": res.user.id,
                                 "device_token": nuevo_token,
                                 "email": res.user.email,
-                                "nombre_dispositivo": "Dispositivo Confiable Bolsos",
+                                "nombre_dispositivo": "Sesión Persistente Confiable",
                             }).execute()
                         except Exception:
                             pass
@@ -125,7 +127,7 @@ else:
                 ).execute()
             except Exception:
                 pass
-            cookie_manager.delete("dispositivo_confiable_token_bolsos")
+            cookie_manager.delete("nexus_session_token_bolsos")
             
         st.session_state["usuario"] = None
         st.rerun()
@@ -145,9 +147,9 @@ else:
                             supabase.table("dispositivos_confiados").delete().eq(
                                 "device_token", device_token_cookie
                             ).execute()
-                        except:
+                        except Exception:
                             pass
-                        cookie_manager.delete("dispositivo_confiable_token_bolsos")
+                        cookie_manager.delete("nexus_session_token_bolsos")
                     
                     st.session_state["usuario"] = None
                     st.success("Tu cuenta ha sido eliminada permanentemente.")
@@ -168,7 +170,7 @@ else:
         "💱 Compra/Venta Dólares"
     ])
 
-    # PESTAÑA 1: Ver tus bolsos
+    # PESTAÑA 1: Mis Bolsos
     with tab_mis_bolsos:
         col_cabecera_1, col_cabecera_2 = st.columns([3, 1])
         with col_cabecera_1:
@@ -392,7 +394,7 @@ else:
         except Exception as e:
             st.error(f"Error al cargar los bolsos: {e}")
 
-    # PESTAÑA 2: Crear un nuevo bolso
+    # PESTAÑA 2: Nuevo Bolso
     with tab_crear:
         st.subheader("Crear un Nuevo Bolso / San")
         
@@ -443,7 +445,7 @@ else:
             else:
                 st.warning("Por favor ingresa al menos el nombre del bolso.")
 
-    # PESTAÑA 3: Bolsos compartidos conmigo
+    # PESTAÑA 3: Bolsos Compartidos
     with tab_compartidos:
         col_comp_1, col_comp_2 = st.columns([3, 1])
         with col_comp_1:
@@ -646,7 +648,7 @@ else:
         except Exception as e:
             st.error(f"Error al cargar bolsos compartidos: {e}")
 
-    # PESTAÑA 4: Gestión de permisos
+    # PESTAÑA 4: Control de Permisos
     with tab_permisos:
         st.subheader("Configuración de Colaboradores")
         st.write("Comparte el acceso a tus bolsos ingresando el correo exacto del colaborador.")
