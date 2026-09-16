@@ -12,49 +12,38 @@ st.set_page_config(
     layout="wide",
 )
 
-# --- GESTOR DE COOKIES ---
+# --- GESTOR DE COOKIES Y RECUPERACIÓN AUTOMÁTICA ---
 cookie_manager = st_cookie.CookieManager()
+
+# Forzamos un pequeño retraso de lectura si la cookie no se ha sincronizado
+if "cookie_loaded" not in st.session_state:
+    st.session_state["cookie_loaded"] = True
+    st.rerun()
+
 device_token_cookie = cookie_manager.get(cookie="dispositivo_confiable_token_bolsos")
 
-# --- INICIALIZAR SUPABASE ---
-@st.cache_resource
-def init_supabase() -> Client:
-    raw_url = str(st.secrets["SUPABASE_URL"]).strip()
-    if "/rest/v1" in raw_url:
-        raw_url = raw_url.split("/rest/v1")[0]
-    raw_url = raw_url.rstrip("/")
-    key = str(st.secrets["SUPABASE_KEY"]).strip()
-    return create_client(raw_url, key)
+# --- RECUPERAR SESIÓN POR DISPOSITIVO ---
+if st.session_state["usuario"] is None and device_token_cookie:
+    try:
+        verificacion_disp = (
+            supabase.table("dispositivos_confiados")
+            .select("*")
+            .eq("device_token", device_token_cookie)
+            .execute()
+        )
+        if verificacion_disp.data and len(verificacion_disp.data) > 0:
+            user_id_asociado = verificacion_disp.data[0]["user_id"]
+            correo_asociado = verificacion_disp.data[0].get("email", "usuario@bolsos.com")
+            
+            class UserDummy:
+                def __init__(self, uid, uemail):
+                    self.id = uid
+                    self.email = uemail
 
-supabase = init_supabase()
-
-# --- ESTADO DE SESIÓN ---
-if "usuario" not in st.session_state:
-    st.session_state["usuario"] = None
-
-# --- RECUPERAR SESIÓN INDEPENDIENTE POR DISPOSITIVO (ESTILO EXACTO NEXUS) ---
-if st.session_state["usuario"] is None:
-    if device_token_cookie:
-        try:
-            verificacion_disp = (
-                supabase.table("dispositivos_confiados")
-                .select("*")
-                .eq("device_token", device_token_cookie)
-                .execute()
-            )
-            if verificacion_disp.data and len(verificacion_disp.data) > 0:
-                user_id_asociado = verificacion_disp.data[0]["user_id"]
-                correo_asociado = verificacion_disp.data[0].get("email", "usuario@bolsos.com")
-                
-                class UserDummy:
-                    def __init__(self, uid, uemail):
-                        self.id = uid
-                        self.email = uemail
-
-                st.session_state["usuario"] = UserDummy(user_id_asociado, correo_asociado)
-                st.rerun()
-        except Exception:
-            pass
+            st.session_state["usuario"] = UserDummy(user_id_asociado, correo_asociado)
+            st.rerun()
+    except Exception:
+        pass
 
 # --- PANTALLA DE LOGIN / REGISTRO ---
 if st.session_state["usuario"] is None:
