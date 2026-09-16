@@ -428,6 +428,67 @@ else:
                             
                             st.markdown("---")
                             
+                            # Si es Editor, permitimos ver el botón para editar la configuración general del bolso compartido
+                            if nivel_acceso == "Editor":
+                                with st.popover("✏️ Editar configuración y fechas de este Bolso"):
+                                    nuevo_nombre = st.text_input("Nombre del Bolso", value=bolso['nombre'], key=f"edit_shared_nom_{b_id}")
+                                    nuevo_monto = st.number_input("Monto por Cuota", min_value=0.0, format="%.2f", value=monto_cuota, key=f"edit_shared_mont_{b_id}")
+                                    
+                                    idx_moneda = ["Divisa", "Bolívares (Bs)"].index(tipo_moneda) if tipo_moneda in ["Divisa", "Bolívares (Bs)"] else 0
+                                    nueva_moneda = st.selectbox("Tipo de Moneda", ["Divisa", "Bolívares (Bs)"], index=idx_moneda, key=f"edit_shared_moneda_{b_id}")
+                                    
+                                    nueva_tasa = "N/A"
+                                    nuevo_detalle_tasa = ""
+                                    
+                                    if nueva_moneda == "Bolívares (Bs)":
+                                        opciones_tasas = ["BCV (Dólar)", "BCV (Euro)", "Otra"]
+                                        idx_tasa = opciones_tasas.index(tipo_tasa) if tipo_tasa in opciones_tasas else 0
+                                        nueva_tasa = st.selectbox("¿A qué tasa?", opciones_tasas, index=idx_tasa, key=f"edit_shared_tasa_{b_id}")
+                                        
+                                        if nueva_tasa == "Otra":
+                                            nuevo_detalle_tasa = st.text_input("Especifique cuál tasa", value=otra_tasa, key=f"edit_shared_otra_{b_id}")
+                                    
+                                    idx_freq = ["Quincenal", "Semanal", "Mensual"].index(bolso['frecuencia']) if bolso['frecuencia'] in ["Quincenal", "Semanal", "Mensual"] else 0
+                                    nueva_freq = st.selectbox("Frecuencia", ["Quincenal", "Semanal", "Mensual"], index=idx_freq, key=f"edit_shared_freq_{b_id}")
+                                    nuevo_puestos = st.number_input("Número Total de Puestos", min_value=1, value=total_puestos, step=1, key=f"edit_shared_puest_{b_id}")
+                                    
+                                    st.markdown("---")
+                                    st.markdown("📅 **Selecciona la fecha para cada Puesto:**")
+                                    
+                                    fechas_editadas = []
+                                    for p in range(1, int(nuevo_puestos) + 1):
+                                        fecha_default = datetime.date.today()
+                                        if p - 1 < len(fechas_bolso):
+                                            try:
+                                                partes = fechas_bolso[p-1].split("-")
+                                                if len(partes) == 2:
+                                                    meses = {"ene":1, "feb":2, "mar":3, "abr":4, "may":5, "jun":6, "jul":7, "ago":8, "sept":9, "oct":10, "nov":11, "dic":12}
+                                                    m_num = meses.get(partes[1].lower(), 1)
+                                                    fecha_default = datetime.date(datetime.date.today().year, m_num, int(partes[0]))
+                                            except:
+                                                pass
+                                                
+                                        f_sel = st.date_input(f"Fecha para Puesto {p}", value=fecha_default, key=f"edit_shared_date_{b_id}_{p}")
+                                        fechas_editadas.append(f_sel.strftime("%d-%b"))
+                                    
+                                    if st.button("Guardar Cambios Generales", key=f"btn_edit_gen_shared_{b_id}", type="primary"):
+                                        try:
+                                            nuevas_fechas_str = ", ".join(fechas_editadas)
+                                            supabase.table("bolsos").update({
+                                                "nombre": nuevo_nombre,
+                                                "monto_cuota": nuevo_monto,
+                                                "tipo_moneda": nueva_moneda,
+                                                "tipo_tasa": nueva_tasa,
+                                                "otra_tasa_detalle": nuevo_detalle_tasa,
+                                                "frecuencia": nueva_freq,
+                                                "total_puestos": int(nuevo_puestos),
+                                                "fechas_cronograma": nuevas_fechas_str
+                                            }).eq("id", b_id).execute()
+                                            st.success("¡Configuración actualizada con éxito!")
+                                            st.rerun()
+                                        except Exception as e:
+                                            st.error(f"Error al actualizar: {e}")
+
                             with st.popover("⚙️ Salir / Dejar de ver este Bolso"):
                                 st.markdown("🗑️ **Remover de tus compartidos**")
                                 st.write("Si ya no deseas participar o ver este bolso compartido, puedes removerlo de tu lista.")
@@ -471,7 +532,6 @@ else:
 
                                 opciones_estado = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Pagado ({email_corto})"]
                                 
-                                # CORRECCIÓN CLAVE AQUÍ: Se asegura que si nivel_acceso == "Lectura" se bloquee, y si es "Editor" se permita editar
                                 es_solo_lectura = (nivel_acceso == "Lectura")
                                 
                                 column_config_dict = {
