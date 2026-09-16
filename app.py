@@ -109,7 +109,12 @@ else:
 
     # PESTAÑA 1: Ver tus bolsos
     with tab_mis_bolsos:
-        st.subheader("Tus Bolsos Activos")
+        col_cabecera_1, col_cabecera_2 = st.columns([3, 1])
+        with col_cabecera_1:
+            st.subheader("Tus Bolsos Activos")
+        with col_cabecera_2:
+            if st.button("🔄 Actualizar Tabla", key="btn_refrescar_mis_bolsos"):
+                st.rerun()
         
         try:
             response = supabase.table("bolsos").select("*").eq("creador_id", usuario_actual.id).execute()
@@ -276,7 +281,6 @@ else:
                                     df_matriz[col] = "⏳ Pendiente"
                             df_matriz = df_matriz[[c for c in columnas_fijas if c in df_matriz.columns]]
 
-                            # Opciones de pago dinámicas incluyendo el usuario actual para indicar quién recibió/registró el dinero
                             opciones_base = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Pagado (por {email_corto})"]
                             
                             column_config_dict = {
@@ -378,7 +382,13 @@ else:
 
     # PESTAÑA 3: Bolsos compartidos conmigo
     with tab_compartidos:
-        st.subheader("🤝 Bolsos Compartidos Conmigo")
+        col_comp_1, col_comp_2 = st.columns([3, 1])
+        with col_comp_1:
+            st.subheader("🤝 Bolsos Compartidos Conmigo")
+        with col_comp_2:
+            if st.button("🔄 Actualizar Tabla", key="btn_refrescar_compartidos"):
+                st.rerun()
+
         try:
             resp_comp = supabase.table("compartidos").select("bolso_id, nivel").eq("email_colaborador", email_usuario).execute()
             shared_records = resp_comp.data if resp_comp.data else []
@@ -534,7 +544,6 @@ else:
 
                                 es_solo_lectura = (nivel_acceso == "Lectura")
                                 
-                                # Opciones de pago dinámicas incluyendo al usuario actual logueado
                                 opciones_base = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Pagado (por {email_corto})"]
                                 
                                 column_config_dict = {
@@ -598,7 +607,7 @@ else:
                     try:
                         resp_check = supabase.table("compartidos").select("*").eq("bolso_id", bolso_id_seleccionado).eq("email_colaborador", correo_limpio).execute()
                         
-                        if resp_check.data and len(resp_check.data > 0):
+                        if resp_check.data and len(resp_check.data) > 0:
                             st.warning(f"⚠️ El usuario **{correo_limpio}** ya tiene acceso a este bolso.")
                         else:
                             supabase.table("compartidos").insert({
