@@ -73,7 +73,7 @@ else:
         "⚙️ Control de Permisos"
     ])
 
-    # PESTAÑA 1: Ver y gestionar bolsos propios y su matriz de turnos
+    # PESTAÑA 1: Ver bolsos en formato limpio con desplegable de detalles y matriz por fechas
     with tab_mis_bolsos:
         st.subheader("Tus Bolsos Activos")
         
@@ -82,40 +82,45 @@ else:
             bolsos = response.data
             
             if bolsos:
-                # Selector para elegir qué bolso administrar a detalle
-                nombres_bolsos = {b["nombre"]: b for b in bolsos}
-                bolso_seleccionado_nombre = st.selectbox("Selecciona un bolso para ver su cronograma y participantes:", list(nombres_bolsos.keys()))
-                bolso_activo = nombres_bolsos[bolso_seleccionado_nombre]
-                
-                st.divider()
-                st.markdown(f"### 📋 Detalle del Bolso: **{bolso_activo['nombre']}**")
-                col1, col2, col3 = st.columns(3)
-                col1.metric("Monto por Cuota", f"${bolso_activo['monto_cuota']}")
-                col2.metric("Frecuencia", bolso_activo['frecuencia'])
-                col3.metric("Total Puestos", bolso_activo['total_puestos'])
-                
-                st.markdown("---")
-                st.subheader("🗓️ Cronograma y Turnos de Cobro (Estilo Matriz)")
-                st.info("Aquí puedes ver el orden de los puestos tal como en tu ejemplo de planificación.")
-                
-                # Simulación visual interactiva de la tabla de puestos estilo la imagen de Excel
-                puestos_totales = int(bolso_activo['total_puestos'])
-                
-                # Generador rápido de ejemplo de nombres por defecto si deseas editarlos
-                data_ejemplo = []
-                nombres_default = ["Luis I", "Yaideli", "Dioselina", "Dana", "Daniel", "María O", "Roberto"]
-                
-                for i in range(1, puestos_totales + 1):
-                    nombre_sugerido = nombres_default[i-1] if i <= len(nombres_default) else f"Participante {i}"
-                    data_ejemplo.append({
-                        "Nro. Puesto": i,
-                        "Participante": nombre_sugerido,
-                        "Estado de Cobro": "🟢 Toca Cobrar" if i == 1 else "⏳ Pendiente"
-                    })
-                
-                df_cronograma = pd.DataFrame(data_ejemplo)
-                st.data_editor(df_cronograma, use_container_width=True, hide_index=True)
-
+                for bolso in bolsos:
+                    # Contenedor desplegable (Expander) para cada bolso
+                    with st.expander(f"📦 {bolso['nombre']} — Monto: ${bolso['monto_cuota']} ({bolso['frecuencia']})"):
+                        col1, col2, col3 = st.columns(3)
+                        col1.metric("Monto por Cuota", f"${bolso['monto_cuota']}")
+                        col2.metric("Frecuencia", bolso['frecuencia'])
+                        col3.metric("Total Puestos", bolso['total_puestos'])
+                        
+                        st.markdown("---")
+                        st.markdown("### 🗓️ Cronograma y Turnos de Cobro (Matriz por Fechas)")
+                        
+                        # Fechas quincenales automáticas de ejemplo (como tu referencia)
+                        fechas_quincenales = [
+                            "15-sept", "30-sept", "15-oct", "30-oct", 
+                            "15-nov", "30-nov", "15-dic"
+                        ]
+                        
+                        nombres_default = ["Luis I", "Yaidi", "Dioselina", "Dana", "Daniel", "María O", "Roberto"]
+                        total_puestos = int(bolso['total_puestos'])
+                        
+                        # Construir matriz cruzando participantes con fechas de cobro
+                        matriz_data = []
+                        for i in range(1, total_puestos + 1):
+                            nombre_part = nombres_default[i-1] if i-1 < len(nombres_default) else f"Participante {i}"
+                            
+                            fila = {"Nro": i, "Participante": nombre_part}
+                            
+                            # Asignar la celda verde (Toca Cobrar) en la fecha correspondiente a su puesto
+                            for idx, fecha in enumerate(fechas_quincenales):
+                                if (idx + 1) == i:
+                                    fila[fecha] = "🟢 Toca Cobrar"
+                                else:
+                                    fila[fecha] = "⏳ Pendiente"
+                            matriz_data.append(fila)
+                        
+                        df_matriz = pd.DataFrame(matriz_data)
+                        
+                        # Mostrar la tabla interactiva editable dentro del desplegable
+                        st.data_editor(df_matriz, use_container_width=True, hide_index=True)
             else:
                 st.info("Aún no tienes bolsos creados. Ve a la pestaña 'Nuevo Bolso' para registrar el primero.")
         except Exception as e:
