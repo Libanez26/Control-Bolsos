@@ -32,7 +32,6 @@ if st.session_state["usuario"] is None:
     st.markdown("Por favor, inicia sesión o regístrate para continuar.")
     
     modo = st.radio("Acción", ["Iniciar Sesión", "Registrarse"], horizontal=True)
-    
     email = st.text_input("Correo electrónico")
     password = st.text_input("Contraseña", type="password")
     
@@ -74,42 +73,69 @@ else:
         "⚙️ Control de Permisos"
     ])
 
-    # PESTAÑA 1: Ver y gestionar bolsos propios
+    # PESTAÑA 1: Ver y gestionar bolsos propios y su matriz de turnos
     with tab_mis_bolsos:
         st.subheader("Tus Bolsos Activos")
         
         try:
-            # Consultar los bolsos creados por el usuario actual
             response = supabase.table("bolsos").select("*").eq("creador_id", usuario_actual.id).execute()
             bolsos = response.data
             
             if bolsos:
-                df = pd.DataFrame(bolsos)
-                # Seleccionar y renombrar columnas clave para mostrar
-                df_display = df[["nombre", "monto_cuota", "frecuencia", "total_puestos"]]
-                df_display.columns = ["Nombre del Bolso", "Monto Cuota", "Frecuencia", "Puestos"]
-                st.dataframe(df_display, use_container_width=True)
+                # Selector para elegir qué bolso administrar a detalle
+                nombres_bolsos = {b["nombre"]: b for b in bolsos}
+                bolso_seleccionado_nombre = st.selectbox("Selecciona un bolso para ver su cronograma y participantes:", list(nombres_bolsos.keys()))
+                bolso_activo = nombres_bolsos[bolso_seleccionado_nombre]
+                
+                st.divider()
+                st.markdown(f"### 📋 Detalle del Bolso: **{bolso_activo['nombre']}**")
+                col1, col2, col3 = st.columns(3)
+                col1.metric("Monto por Cuota", f"${bolso_activo['monto_cuota']}")
+                col2.metric("Frecuencia", bolso_activo['frecuencia'])
+                col3.metric("Total Puestos", bolso_activo['total_puestos'])
+                
+                st.markdown("---")
+                st.subheader("🗓️ Cronograma y Turnos de Cobro (Estilo Matriz)")
+                st.info("Aquí puedes ver el orden de los puestos tal como en tu ejemplo de planificación.")
+                
+                # Simulación visual interactiva de la tabla de puestos estilo la imagen de Excel
+                puestos_totales = int(bolso_activo['total_puestos'])
+                
+                # Generador rápido de ejemplo de nombres por defecto si deseas editarlos
+                data_ejemplo = []
+                nombres_default = ["Luis I", "Yaideli", "Dioselina", "Dana", "Daniel", "María O", "Roberto"]
+                
+                for i in range(1, puestos_totales + 1):
+                    nombre_sugerido = nombres_default[i-1] if i <= len(nombres_default) else f"Participante {i}"
+                    data_ejemplo.append({
+                        "Nro. Puesto": i,
+                        "Participante": nombre_sugerido,
+                        "Estado de Cobro": "🟢 Toca Cobrar" if i == 1 else "⏳ Pendiente"
+                    })
+                
+                df_cronograma = pd.DataFrame(data_ejemplo)
+                st.data_editor(df_cronograma, use_container_width=True, hide_index=True)
+
             else:
                 st.info("Aún no tienes bolsos creados. Ve a la pestaña 'Nuevo Bolso' para registrar el primero.")
         except Exception as e:
-            st.error(f"Error al cargar los bolsos. Asegúrate de haber creado la tabla 'bolsos' en Supabase. Detalle: {e}")
+            st.error(f"Error al cargar los bolsos: {e}")
 
     # PESTAÑA 2: Crear un nuevo bolso
     with tab_crear:
         st.subheader("Crear un Nuevo Bolso / San")
         
         with st.form("form_nuevo_bolso", clear_on_submit=True):
-            nombre_bolso = st.text_input("Nombre del Bolso (Ej. Bolso Quincenal)")
-            monto_cuota = st.number_input("Monto por Cuota", min_value=0.0, format="%.2f")
-            frecuencia = st.selectbox("Frecuencia", ["Semanal", "Quincenal", "Mensual"])
-            total_puestos = st.number_input("Número Total de Puestos / Participantes", min_value=1, step=1)
+            nombre_bolso = st.text_input("Nombre del Bolso (Ej. 4to Bolso 2025)")
+            monto_cuota = st.number_input("Monto por Cuota", min_value=0.0, format="%.2f", value=50.0)
+            frecuencia = st.selectbox("Frecuencia", ["Quincenal", "Semanal", "Mensual"])
+            total_puestos = st.number_input("Número Total de Puestos / Participantes", min_value=1, value=7, step=1)
             
             submit_bolso = st.form_submit_button("Guardar Bolso", type="primary")
             
             if submit_bolso:
                 if nombre_bolso:
                     try:
-                        # Insertar en la base de datos de Supabase
                         data_insert = {
                             "nombre": nombre_bolso,
                             "monto_cuota": monto_cuota,
@@ -137,8 +163,6 @@ else:
         
         with st.form("form_permisos"):
             correo_colaborador = st.text_input("Correo electrónico del colaborador")
-            
-            # Obtener nombres de bolsos propios para el selector
             try:
                 resp_b = supabase.table("bolsos").select("id, nombre").eq("creador_id", usuario_actual.id).execute()
                 mis_b_nombres = {b["nombre"]: b["id"] for b in resp_b.data} if resp_b.data else {}
