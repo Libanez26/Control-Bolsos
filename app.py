@@ -60,7 +60,7 @@ if st.session_state["usuario"] is None and device_token_cookie:
 
 # --- PANTALLA DE LOGIN / REGISTRO ---
 if st.session_state["usuario"] is None:
-    st.title("💰 App de Gestión de Bolsos (Sanes)")
+    st.title("💰 Gestión de Bolsos (Sanes)")
     st.markdown("Por favor, inicia sesión o regístrate para continuar.")
     
     modo = st.radio("Acción", ["Iniciar Sesión", "Registrarse"], horizontal=True, key="main_modo_auth")
