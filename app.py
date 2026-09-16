@@ -1,4 +1,6 @@
 import datetime
+import uuid
+import extra_streamlit_components as st_cookie
 import streamlit as st
 import pandas as pd
 from supabase import Client, create_client
@@ -10,7 +12,11 @@ st.set_page_config(
     layout="wide",
 )
 
-# --- 1. INICIALIZAR SUPABASE ---
+# --- GESTOR DE COOKIES ---
+cookie_manager = st_cookie.CookieManager()
+device_token_cookie = cookie_manager.get(cookie="dispositivo_confiable_token_bolsos")
+
+# --- INICIALIZAR SUPABASE ---
 @st.cache_resource
 def init_supabase() -> Client:
     raw_url = str(st.secrets["SUPABASE_URL"]).strip()
@@ -20,190 +26,147 @@ def init_supabase() -> Client:
     key = str(st.secrets["SUPABASE_KEY"]).strip()
     return create_client(raw_url, key)
 
-try:
-    supabase = init_supabase()
-except Exception as e:
-    st.error(f"Error al conectar con Supabase: {e}")
+supabase = init_supabase()
 
-# --- 2. ESTADO DE SESIÓN ---
+# --- ESTADO DE SESIÓN ---
 if "usuario" not in st.session_state:
     st.session_state["usuario"] = None
 
-# Intentar recuperar la sesión automáticamente desde la caché interna de Supabase
-if st.session_state["usuario"] is None:
+# --- RECUPERAR Y VALIDAR SESIÓN POR DISPOSITIVO ---
+if st.session_state["usuario"] is None and device_token_cookie:
     try:
-        session_actual = supabase.auth.get_session()
-        if session_actual and session_actual.user:
-            st.session_state["usuario"] = session_actual.user
-    except Exception:
-        pass
+        verificacion_disp = (
+            supabase.table("dispositivos_confiados")
+            .select("*")
+            .eq("device_token", device_token_cookie)
+            .execute()
+        )
+        
+        if verificacion_disp.data and len(verificacion_disp.data) > 0:
+            user_id_asociado = verificacion_disp.data[0]["user_id"]
+            correo_asociado = verificacion_disp.data[0].get("email", "usuario@bolsos.com")
+            
+            class UserDummy:
+                def __init__(self, uid, uemail):
+                    self.id = uid
+                    self.email = uemail
 
+            st.session_state["usuario"] = UserDummy(user_id_asociado, correo_asociado)
+        else:
+            cookie_manager.delete("dispositivo_confiable_token_bolsos")
+            st.session_state["usuario"] = None
+    except Exception:
+        st.session_state["usuario"] = None
 
 # --- PANTALLA DE LOGIN / REGISTRO ---
 if st.session_state["usuario"] is None:
     st.title("💰 App de Gestión de Bolsos (Sanes)")
-    st.subheader("Inicia sesión para acceder a tus bolsos.")
-
-    tab_login, tab_registro = st.tabs(["🔑 Iniciar Sesión", "📝 Registrarse"])
-
-    with tab_login:
-        with st.form("form_login_bolsos"):
-            email_login = st.text_input("Correo electrónico")
-            pass_login = st.text_input("Contraseña", type="password")
-
-            submit_login = st.form_submit_button("Ingresar")
-
-            if submit_login:
-                try:
-                    res = supabase.auth.sign_in_with_password({
-                        "email": email_login.strip(),
-                        "password": pass_login.strip(),
-                    })
-                    if res.user:
-                        st.session_state["usuario"] = res.user
-                        st.success("¡Sesión iniciada con éxito!")
-                        st.rerun()
-                except Exception as e:
-                    st.error(f"Error al iniciar sesión: {e}")
-
-    with tab_registro:
-        with st.form("form_registro_bolsos"):
-            email_reg = st.text_input("Correo electrónico para el registro")
-            pass_reg = st.text_input("Contraseña", type="password")
-            submit_reg = st.form_submit_button("Crear Cuenta")
-
-            if submit_reg:
-                try:
-                    res = supabase.auth.sign_up({
-                        "email": email_reg.strip(),
-                        "password": pass_reg.strip(),
-                    })
-                    if res.user:
-                        st.success("¡Cuenta creada exitosamente! Ahora puedes iniciar sesión.")
-                except Exception as e:
-                    st.error(f"Error al registrarse: {e}")
+    st.markdown("Por favor, inicia sesión o regístrate para continuar.")
+    
+    modo = st.radio("Acción", ["Iniciar Sesión", "Registrarse"], horizontal=True, key="main_modo_auth")
+    email = st.text_input("Correo electrónico", key="main_email_auth")
+    password = st.text_input("Contraseña", type="password", key="main_pass_auth")
+    
+    recordar_dispositivo = st.checkbox(
+        "Confiar en este dispositivo (Mantener sesión abierta solo aquí)",
+        value=True,
+        key="main_chk_dispositivo"
+    )
+    
+    if modo == "Iniciar Sesión":
+        if st.button("Ingresar", type="primary", key="btn_ingresar_auth"):
+            try:
+                res = supabase.auth.sign_in_with_password({"email": email, "password": password})
+                if res.user:
+                    st.session_state["usuario"] = res.user
+                    
+                    if recordar_dispositivo:
+                        nuevo_token = str(uuid.uuid4())
+                        cookie_manager.set(
+                            "dispositivo_confiable_token_bolsos", nuevo_token, max_age=31536000
+                        )
+                        try:
+                            supabase.table("dispositivos_confiados").insert({
+                                "user_id": res.user.id,
+                                "device_token": nuevo_token,
+                                "email": res.user.email,
+                                "nombre_dispositivo": "Dispositivo Confiable Bolsos",
+                            }).execute()
+                        except Exception:
+                            pass
+                            
+                    st.success("¡Bienvenido!")
+                    st.rerun()
+            except Exception as e:
+                st.error(f"Error al iniciar sesión: Verifique sus credenciales. ({e})")
+    else:
+        if st.button("Crear Cuenta", type="primary", key="btn_crear_auth"):
+            try:
+                res = supabase.auth.sign_up({"email": email, "password": password})
+                if res.user:
+                    st.success("¡Cuenta creada con éxito! Ya puedes iniciar sesión.")
+            except Exception as e:
+                st.error(f"Error al registrarse: {e}")
 
 else:
     # --- APLICACIÓN PRINCIPAL ---
     usuario_actual = st.session_state["usuario"]
-    email_usuario = getattr(usuario_actual, "email", "usuario@bolsos.com").strip().lower()
-    email_corto = email_usuario.split("@")[0] if "@" in email_usuario else "usuario"
+    email_usuario = usuario_actual.email.strip().lower()
+    email_corto = email_usuario.split("@")[0]
     
     # --- BARRA LATERAL ---
     st.sidebar.markdown(f"👤 **Usuario:** {email_corto}")
     
-    if st.sidebar.button("Cerrar Sesión", key="btn_sidebar_cerrar"):
-        try:
-            supabase.auth.sign_out()
-        except Exception:
-            pass
+    if st.sidebar.button("Cerrar Sesión en este equipo", key="btn_sidebar_cerrar"):
+        if device_token_cookie:
+            try:
+                supabase.table("dispositivos_confiados").delete().eq(
+                    "device_token", device_token_cookie
+                ).execute()
+            except Exception:
+                pass
+            cookie_manager.delete("dispositivo_confiable_token_bolsos")
+            
         st.session_state["usuario"] = None
         st.rerun()
+        
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### ⚙️ Zona de Peligro")
+    with st.sidebar.popover("🗑️ Eliminar mi cuenta"):
+        st.warning("⚠️ **Atención:** Esta acción es totalmente irreversible. Borrará tu cuenta de forma definitiva y todos tus bolsos y datos asociados desaparecerán para siempre.")
+        confirmar_eliminacion = st.checkbox("Confirmo que deseo eliminar mi cuenta para siempre", key="chk_confirma_eliminar_cuenta")
+        
+        if st.button("Eliminar Permanentemente", type="primary", key="btn_ejecutar_eliminar_cuenta"):
+            if confirmar_eliminacion:
+                try:
+                    supabase.rpc("eliminar_cuenta_usuario").execute()
+                    if device_token_cookie:
+                        try:
+                            supabase.table("dispositivos_confiados").delete().eq(
+                                "device_token", device_token_cookie
+                            ).execute()
+                        except:
+                            pass
+                        cookie_manager.delete("dispositivo_confiable_token_bolsos")
+                    
+                    st.session_state["usuario"] = None
+                    st.success("Tu cuenta ha sido eliminada permanentemente.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error al eliminar la cuenta: {e}")
+            else:
+                st.error("Debes marcar la casilla de confirmación.")
 
     st.title("💼 Panel de Control de Bolsos y Sanes")
 
-    # PESTAÑA 5: Compra/Venta Dólares
-    with tab_divisas:
-        st.subheader("💱 Control de Compra y Venta de Dólares")
-        st.write("Lleva el control de quién te vende, a quién le vendes y los estados de entrega de dinero.")
-        
-        if "divisas_registros" not in st.session_state:
-            st.session_state["divisas_registros"] = [
-                {
-                    "Operación": "VENDIDO",
-                    "Monto ($)": 100.0,
-                    "Nombre": "Carlos Silva",
-                    "Me Entregaron": True,
-                    "Entregué": False
-                },
-                {
-                    "Operación": "COMPRADO",
-                    "Monto ($)": 50.0,
-                    "Nombre": "Ana Torres",
-                    "Me Entregaron": False,
-                    "Entregué": True
-                }
-            ]
-
-        with st.form("form_nueva_divisa", clear_on_submit=True):
-            st.markdown("### ➕ Registrar Nueva Operación")
-            col_f1, col_f2, col_f3 = st.columns(3)
-            with col_f1:
-                tipo_operacion = st.selectbox("Operación", ["VENDIDO", "COMPRADO"], key="nuevo_tipo_op")
-            with col_f2:
-                monto_divisa = st.number_input("Monto en Dólares ($)", min_value=0.0, format="%.2f", value=50.0, key="nuevo_monto_op")
-            with col_f3:
-                nombre_persona = st.text_input("Nombre de la Persona", placeholder="Ej. Juan Pérez", key="nuevo_nombre_op")
-            
-            st.markdown("---")
-            st.markdown("📦 **Estado de Entrega inicial:**")
-            col_c1, col_c2 = st.columns(2)
-            with col_c1:
-                chk_me_entregaron = st.checkbox("¿Me entregaron el dinero?", key="nuevo_chk_entregaron")
-            with col_c2:
-                chk_entregue = st.checkbox("¿Ya entregué el dinero?", key="nuevo_chk_entregue")
-                
-            btn_guardar_divisa = st.form_submit_button("Guardar Operación", type="primary")
-            
-            if btn_guardar_divisa:
-                if nombre_persona.strip():
-                    st.session_state["divisas_registros"].append({
-                        "Operación": tipo_operacion,
-                        "Monto ($)": monto_divisa,
-                        "Nombre": nombre_persona.strip(),
-                        "Me Entregaron": chk_me_entregaron,
-                        "Entregué": chk_entregue
-                    })
-                    st.success("¡Operación registrada con éxito!")
-                    st.rerun()
-                else:
-                    st.warning("Por favor ingresa el nombre de la persona.")
-
-        st.markdown("---")
-        st.subheader("📋 Listado y Control de Operaciones")
-
-        if st.session_state["divisas_registros"]:
-            df_divisas = pd.DataFrame(st.session_state["divisas_registros"])
-            
-            columnas_config_divisas = {
-                "Operación": st.column_config.SelectboxColumn(
-                    "Operación", options=["VENDIDO", "COMPRADO"], required=True, width="medium"
-                ),
-                "Monto ($)": st.column_config.NumberColumn(
-                    "Monto (\()", format="\)%.2f", min_value=0.0, required=True, width="small"
-                ),
-                "Nombre": st.column_config.TextColumn(
-                    "Nombre (Cliente / Proveedor)", required=True, width="large"
-                ),
-                "Me Entregaron": st.column_config.CheckboxColumn(
-                    "Me Entregaron", required=True, width="small"
-                ),
-                "Entregué": st.column_config.CheckboxColumn(
-                    "Entregué", required=True, width="small"
-                ),
-            }
-
-            df_divisas_editado = st.data_editor(
-                df_divisas,
-                column_config=columnas_config_divisas,
-                use_container_width=True,
-                hide_index=True,
-                key="editor_tabla_divisas"
-            )
-
-            col_bt_1, col_bt_2 = st.columns([1, 4])
-            with col_bt_1:
-                if st.button("💾 Guardar Cambios", type="primary", key="btn_guardar_cambios_divisas"):
-                    st.session_state["divisas_registros"] = df_divisas_editado.to_dict(orient="records")
-                    st.success("¡Cambios actualizados correctamente!")
-                    st.rerun()
-                    
-            with col_bt_2:
-                if st.button("🗑️ Limpiar Todo el Historial", key="btn_limpiar_divisas"):
-                    st.session_state["divisas_registros"] = []
-                    st.rerun()
-        else:
-            st.info("No hay operaciones de compra/venta registradas todavía.")
+    # --- DEFINICIÓN DE PESTAÑAS ---
+    tab_mis_bolsos, tab_crear, tab_compartidos, tab_permisos, tab_divisas = st.tabs([
+        "📂 Mis Bolsos", 
+        "➕ Nuevo Bolso", 
+        "🤝 Bolsos Compartidos", 
+        "⚙️ Control de Permisos",
+        "💱 Compra/Venta Dólares"
+    ])
 
     # PESTAÑA 1: Ver tus bolsos
     with tab_mis_bolsos:
@@ -645,6 +608,7 @@ else:
                                 df_matriz = df_matriz[[c for c in columnas_fijas if c in df_matriz.columns]]
 
                                 es_solo_lectura = (nivel_acceso == "Lectura")
+                                
                                 opciones_base = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Pagado (por {email_corto})"]
                                 
                                 column_config_dict = {
@@ -721,3 +685,128 @@ else:
                         st.error(f"Error al otorgar acceso: {e}")
                 else:
                     st.warning("Verifica el correo y que tengas bolsos creados.")
+
+    # PESTAÑA 5: Compra/Venta Dólares
+    with tab_divisas:
+        st.subheader("💱 Control de Compra y Venta de Dólares")
+        st.write("Registra las operaciones indicando quién vende, quién compra, los montos y los estados de entrega.")
+        
+        # Estructura inicial en sesión si no existe
+        if "divisas_registros" not in st.session_state:
+            st.session_state["divisas_registros"] = [
+                {
+                    
+                    "Monto ($)": 20.0,
+                    "Vendedor": "name",
+                    "Comprador": "name",
+                    "Me Entregaron": True,
+                    "Entregué": False
+                }
+            ]
+
+        # Formulario para agregar nueva operación con Vendedor y Comprador
+        with st.form("form_nueva_divisa", clear_on_submit=True):
+            st.markdown("### ➕ Registrar Nueva Operación")
+            
+            col_f1, col_f2 = st.columns(2)
+            with col_f1:
+                tipo_operacion = st.selectbox("Tipo de Operación", ["VENDIDO"], key="nuevo_tipo_op")
+            with col_f2:
+                monto_divisa = st.number_input("Monto en Dólares ($)", min_value=0.0, format="%.2f", value=20.0, key="nuevo_monto_op")
+            
+            col_n1, col_n2 = st.columns(2)
+            with col_n1:
+                nombre_vendedor = st.text_input("Nombre del Vendedor", placeholder="Ej. Name", key="nuevo_vendedor_op")
+            with col_n2:
+                nombre_comprador = st.text_input("Nombre del Comprador", placeholder="Ej. Name", key="nuevo_comprador_op")
+            
+            st.markdown("---")
+            st.markdown("📦 **Estado de Entrega inicial:**")
+            col_c1, col_c2 = st.columns(2)
+            with col_c1:
+                chk_me_entregaron = st.checkbox("¿Me entregaron el dinero?", key="nuevo_chk_entregaron")
+            with col_c2:
+                chk_entregue = st.checkbox("¿Ya entregué el dinero?", key="nuevo_chk_entregue")
+                
+            btn_guardar_divisa = st.form_submit_button("Guardar Operación", type="primary")
+            
+            if btn_guardar_divisa:
+                if nombre_vendedor.strip() and nombre_comprador.strip():
+                    st.session_state["divisas_registros"].append({
+                        "Operación": tipo_operacion,
+                        "Monto ($)": monto_divisa,
+                        "Vendedor": nombre_vendedor.strip(),
+                        "Comprador": nombre_comprador.strip(),
+                        "Me Entregaron": chk_me_entregaron,
+                        "Entregué": chk_entregue
+                    })
+                    st.success("¡Operación registrada con éxito!")
+                    st.rerun()
+                else:
+                    st.warning("Por favor ingresa tanto el nombre del vendedor como el del comprador.")
+
+        st.markdown("---")
+        st.subheader("📋 Listado y Control de Operaciones")
+        st.write("Puedes editar directamente los campos o marcar las casillas de verificación para actualizar el estado al instante.")
+
+        if st.session_state["divisas_registros"]:
+            df_divisas = pd.DataFrame(st.session_state["divisas_registros"])
+            
+            columnas_config_divisas = {
+                "Operación": st.column_config.SelectboxColumn(
+                    "Operación",
+                    options=["VENDIDO", "COMPRADO"],
+                    required=True,
+                    width="small"
+                ),
+                "Monto ($)": st.column_config.NumberColumn(
+                    "Monto ($)",
+                    format="$%.2f",
+                    min_value=0.0,
+                    required=True,
+                    width="small"
+                ),
+                "Vendedor": st.column_config.TextColumn(
+                    "Vendedor",
+                    required=True,
+                    width="medium"
+                ),
+                "Comprador": st.column_config.TextColumn(
+                    "Comprador",
+                    required=True,
+                    width="medium"
+                ),
+                "Me Entregaron": st.column_config.CheckboxColumn(
+                    "Me Entregaron",
+                    required=True,
+                    width="small"
+                ),
+                "Entregué": st.column_config.CheckboxColumn(
+                    "Entregué",
+                    required=True,
+                    width="small"
+                ),
+            }
+
+            df_divisas_editado = st.data_editor(
+                df_divisas,
+                column_config=columnas_config_divisas,
+                use_container_width=True,
+                hide_index=True,
+                key="editor_tabla_divisas"
+            )
+
+            col_bt_1, col_bt_2 = st.columns([1, 4])
+            
+            with col_bt_1:
+                if st.button("💾 Guardar Cambios", type="primary", key="btn_guardar_cambios_divisas"):
+                    st.session_state["divisas_registros"] = df_divisas_editado.to_dict(orient="records")
+                    st.success("¡Cambios actualizados correctamente!")
+                    st.rerun()
+                    
+            with col_bt_2:
+                if st.button("🗑️ Limpiar Todo el Historial", key="btn_limpiar_divisas"):
+                    st.session_state["divisas_registros"] = []
+                    st.rerun()
+        else:
+            st.info("No hay operaciones de compra/venta registradas todavía.")
