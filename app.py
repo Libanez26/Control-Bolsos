@@ -352,7 +352,14 @@ else:
                             }
                             
                             for fecha in fechas_bolso:
-                                valores_existentes = df_matriz[fecha].dropna().unique().tolist() if fecha in df_matriz.columns else []
+                                if fecha in df_matriz.columns:
+                                    serie_fecha = df_matriz[fecha]
+                                    if isinstance(serie_fecha, pd.DataFrame):
+                                        serie_fecha = serie_fecha.iloc[:, 0]
+                                    valores_existentes = serie_fecha.dropna().unique().tolist()
+                                else:
+                                    valores_existentes = []
+                                    
                                 opciones_estado = list(dict.fromkeys(opciones_base + valores_existentes))
                                 column_config_dict[fecha] = st.column_config.SelectboxColumn(
                                     label=fecha, options=opciones_estado, required=True, width="medium"
@@ -616,7 +623,14 @@ else:
                                 }
                                 
                                 for fecha in fechas_bolso:
-                                    valores_existentes = df_matriz[fecha].dropna().unique().tolist() if fecha in df_matriz.columns else []
+                                    if fecha in df_matriz.columns:
+                                        serie_fecha = df_matriz[fecha]
+                                        if isinstance(serie_fecha, pd.DataFrame):
+                                            serie_fecha = serie_fecha.iloc[:, 0]
+                                        valores_existentes = serie_fecha.dropna().unique().tolist()
+                                    else:
+                                        valores_existentes = []
+                                        
                                     opciones_estado = list(dict.fromkeys(opciones_base + valores_existentes))
                                     column_config_dict[fecha] = st.column_config.SelectboxColumn(
                                         label=fecha, options=opciones_estado, required=True, width="medium", disabled=es_solo_lectura
@@ -734,7 +748,7 @@ else:
                         "Operación": tipo_operacion,
                         "Monto ($)": monto_divisa,
                         "Nombre": nombre_persona.strip(),
-                        "Me Entregaron": chk_me_entregaron,
+                        "Me Entregaron": ch_me_entregaron if 'ch_me_entregaron' in locals() else chk_me_entregaron,
                         "Entregué": chk_entregue
                     })
                     st.success("¡Operación registrada con éxito!")
