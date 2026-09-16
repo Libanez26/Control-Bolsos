@@ -27,29 +27,26 @@ supabase = init_supabase()
 # --- GESTOR DE COOKIES ---
 cookie_manager = st_cookies.CookieManager()
 
-# --- ESTADO DE SESIÓN Y PERSISTENCIA POR DISPOSITIVO ---
+# --- ESTADO DE SESIÓN Y AISLAMIENTO POR DISPOSITIVO/PESTAÑA ---
 if "usuario" not in st.session_state:
     st.session_state["usuario"] = None
 
-# Intentar recuperar sesión activa de Supabase o mediante cookie de dispositivo confiado
+# Intentar recuperar la sesión *únicamente* usando la cookie exclusiva de esta pestaña/dispositivo
 if st.session_state["usuario"] is None:
     try:
-        # 1. Intentar sesión activa estándar
-        session_data = supabase.auth.get_session()
-        if session_data and session_data.user:
-            st.session_state["usuario"] = session_data.user
-        else:
-            # 2. Intentar recuperar mediante cookie de dispositivo confiado
-            device_token = cookie_manager.get("device_token")
-            if device_token:
-                resp_token = supabase.table("dispositivos_confiados").select("user_id").eq("token", device_token).execute()
-                if resp_token.data:
-                    user_id = resp_token.data[0]["user_id"]
-                    # Como Supabase Auth maneja tokens de sesión, recuperamos al usuario por su ID o forzamos validación
-                    # Nota: si usas la API de admin o el cliente standard, simulamos el objeto usuario recuperando su data si es necesario
-                    # O alternativamente validamos el token interno. 
-                    # Una forma limpia en Supabase client-side para persistir sesión es almacenar la sesión de auth o validar el token:
-                    pass
+        device_token = cookie_manager.get("device_token")
+        if device_token:
+            # Buscar el token en nuestra tabla independiente
+            resp_token = supabase.table("dispositivos_confiados").select("user_id, email").eq("token", device_token).execute()
+            if resp_token.data:
+                # Reconstruimos un objeto de usuario simulado con los datos guardados
+                class UsuarioSesion:
+                    def __init__(self, uid, uemail):
+                        self.id = uid
+                        self.email = uemail
+                
+                user_info = resp_token.data[0]
+                st.session_state["usuario"] = UsuarioSesion(user_info["user_id"], user_info["email"])
     except Exception:
         pass
 
@@ -62,31 +59,33 @@ if st.session_state["usuario"] is None:
     email = st.text_input("Correo electrónico")
     password = st.text_input("Contraseña", type="password")
     
-    # Casilla para recordar el dispositivo de forma aislada
-    recordar_dispositivo = st.checkbox(
-        "Confiar en este dispositivo (Mantener sesión abierta solo aquí)",
-        value=True
-    )
-    
     if modo == "Iniciar Sesión":
         if st.button("Ingresar", type="primary"):
             try:
+                # Validamos credenciales con Supabase Auth pero la persistencia la llevamos nosotros
                 res = supabase.auth.sign_in_with_password({"email": email, "password": password})
                 if res.user:
-                    st.session_state["usuario"] = res.user
+                    user_id = res.user.id
+                    user_email = res.user.email
                     
-                    # Si marcó la opción de confiar en el dispositivo, generamos un token único e independiente
-                    if recordar_dispositivo:
-                        device_token = str(uuid.uuid4())
-                        try:
-                            supabase.table("dispositivos_confiados").insert({
-                                "user_id": res.user.id,
-                                "token": device_token
-                            }).execute()
-                            cookie_manager.set("device_token", device_token, max_age=31536000)
-                        except Exception as cookie_err:
-                            print(f"Error guardando token de dispositivo: {cookie_err}")
+                    # Generamos un token único e irrepetible para *esta* pestaña/dispositivo
+                    device_token = str(uuid.uuid4())
+                    
+                    supabase.table("dispositivos_confiados").insert({
+                        "user_id": user_id,
+                        "email": user_email,
+                        "token": device_token
+                    }).execute()
+                    
+                    # Guardamos la cookie de forma aislada
+                    cookie_manager.set("device_token", device_token, max_age=31536000)
+                    
+                    class UsuarioSesion:
+                        def __init__(self, uid, uemail):
+                            self.id = uid
+                            self.email = uemail
                             
+                    st.session_state["usuario"] = UsuarioSesion(user_id, user_email)
                     st.success("¡Bienvenido!")
                     st.rerun()
             except Exception as e:
@@ -110,14 +109,14 @@ else:
     st.sidebar.markdown(f"👤 **Usuario:** {email_corto}")
     if st.sidebar.button("Cerrar Sesión"):
         try:
-            # Limpiar cookie de dispositivo si existe
+            # Borrar únicamente el token de *este* dispositivo de la base de datos y limpiar la cookie local
             device_token = cookie_manager.get("device_token")
             if device_token:
                 supabase.table("dispositivos_confiados").delete().eq("token", device_token).execute()
                 cookie_manager.delete("device_token")
-            supabase.auth.sign_out()
         except Exception:
             pass
+        
         st.session_state["usuario"] = None
         st.rerun()
         
@@ -136,7 +135,6 @@ else:
                         if device_token:
                             supabase.table("dispositivos_confiados").delete().eq("token", device_token).execute()
                             cookie_manager.delete("device_token")
-                        supabase.auth.sign_out()
                     except:
                         pass
                     st.session_state["usuario"] = None
@@ -332,7 +330,7 @@ else:
                                     df_matriz[col] = "⏳ Pendiente"
                             df_matriz = df_matriz[[c for c in columnas_fijas if c in df_matriz.columns]]
 
-                            opciones_base = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Cobrado(por {email_corto})"]
+                            opciones_base = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Pagado (por {email_corto})"]
                             
                             column_config_dict = {
                                 "Nro. Puesto": st.column_config.NumberColumn("Nro.", disabled=True, width="small"),
@@ -597,7 +595,7 @@ else:
 
                                 es_solo_lectura = (nivel_acceso == "Lectura")
                                 
-                                opciones_base = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Cobrado(por {email_corto})"]
+                                opciones_base = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Pagado (por {email_corto})"]
                                 
                                 column_config_dict = {
                                     "Nro. Puesto": st.column_config.NumberColumn("Nro.", disabled=True, width="small"),
