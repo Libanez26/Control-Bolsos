@@ -99,7 +99,6 @@ else:
                     monto_cuota = float(bolso['monto_cuota'])
                     pozo_total = monto_cuota * total_puestos
                     
-                    # Extraer fechas personalizadas o usar unas por defecto si no existen
                     fechas_str = bolso.get('fechas_cronograma', "15-sept, 30-sept, 15-oct, 30-oct, 15-nov, 30-nov, 15-dic")
                     fechas_bolso = [f.strip() for f in fechas_str.split(",") if f.strip()]
                     
@@ -110,34 +109,50 @@ else:
                         col3.metric("Pozo a Recibir", f"${pozo_total:,.2f}")
                         col4.metric("Frecuencia", bolso['frecuencia'])
                         
-                        # Edición general del bolso (incluyendo las fechas del cronograma)
-                        with st.popover("✏️ Editar configuración de este Bolso"):
-                            with st.form(f"form_editar_{bolso_id}"):
-                                nuevo_nombre = st.text_input("Nombre del Bolso", value=bolso['nombre'])
-                                nuevo_monto = st.number_input("Monto por Cuota", min_value=0.0, format="%.2f", value=monto_cuota)
-                                idx_freq = ["Quincenal", "Semanal", "Mensual"].index(bolso['frecuencia']) if bolso['frecuencia'] in ["Quincenal", "Semanal", "Mensual"] else 0
-                                nueva_freq = st.selectbox("Frecuencia", ["Quincenal", "Semanal", "Mensual"], index=idx_freq)
-                                nuevo_puestos = st.number_input("Número Total de Puestos", min_value=1, value=total_puestos, step=1)
-                                
-                                st.markdown("---")
-                                st.write("📅 Fechas del Cronograma (separadas por comas)")
-                                nuevas_fechas_str = st.text_input("Ej: 01-oct, 15-oct, 01-nov, 15-nov", value=fechas_str)
-                                
-                                btn_actualizar_bolso = st.form_submit_button("Guardar Cambios Generales", type="primary")
-                                
-                                if btn_actualizar_bolso:
+                        # Edición general con selectores de fecha dinámicos
+                        with st.popover("✏️ Editar configuración y fechas de este Bolso"):
+                            nuevo_nombre = st.text_input("Nombre del Bolso", value=bolso['nombre'], key=f"edit_nom_{bolso_id}")
+                            nuevo_monto = st.number_input("Monto por Cuota", min_value=0.0, format="%.2f", value=monto_cuota, key=f"edit_mont_{bolso_id}")
+                            idx_freq = ["Quincenal", "Semanal", "Mensual"].index(bolso['frecuencia']) if bolso['frecuencia'] in ["Quincenal", "Semanal", "Mensual"] else 0
+                            nueva_freq = st.selectbox("Frecuencia", ["Quincenal", "Semanal", "Mensual"], index=idx_freq, key=f"edit_freq_{bolso_id}")
+                            nuevo_puestos = st.number_input("Número Total de Puestos", min_value=1, value=total_puestos, step=1, key=f"edit_puest_{bolso_id}")
+                            
+                            st.markdown("---")
+                            st.markdown("📅 **Selecciona la fecha para cada Puesto:**")
+                            
+                            fechas_editadas = []
+                            for p in range(1, int(nuevo_puestos) + 1):
+                                # Intentar parsear fecha existente o usar el día actual como fallback
+                                fecha_default = datetime.date.today()
+                                if p - 1 < len(fechas_bolso):
                                     try:
-                                        supabase.table("bolsos").update({
-                                            "nombre": nuevo_nombre,
-                                            "monto_cuota": nuevo_monto,
-                                            "frecuencia": nueva_freq,
-                                            "total_puestos": int(nuevo_puestos),
-                                            "fechas_cronograma": nuevas_fechas_str
-                                        }).eq("id", bolso_id).execute()
-                                        st.success("¡Configuración actualizada con éxito!")
-                                        st.rerun()
-                                    except Exception as e:
-                                        st.error(f"Error al actualizar: {e}")
+                                        # Intentamos parsear formato DD-Mon (ej: 15-sept) o fecha estándar
+                                        partes = fechas_bolso[p-1].split("-")
+                                        if len(partes) == 2:
+                                            meses = {"ene":1, "feb":2, "mar":3, "abr":4, "may":5, "jun":6, "jul":7, "ago":8, "sept":9, "oct":10, "nov":11, "dic":12}
+                                            m_num = meses.get(partes[1].lower(), 1)
+                                            fecha_default = datetime.date(datetime.date.today().year, m_num, int(partes[0]))
+                                    except:
+                                        pass
+                                        
+                                f_sel = st.date_input(f"Fecha para Puesto {p}", value=fecha_default, key=f"edit_date_{bolso_id}_{p}")
+                                # Formatear la fecha a formato amigable (ej: 15-sep o YYYY-MM-DD)
+                                fechas_editadas.append(f_sel.strftime("%d-%b"))
+                            
+                            if st.button("Guardar Cambios Generales", key=f"btn_edit_gen_{bolso_id}", type="primary"):
+                                try:
+                                    nuevas_fechas_str = ", ".join(fechas_editadas)
+                                    supabase.table("bolsos").update({
+                                        "nombre": nuevo_nombre,
+                                        "monto_cuota": nuevo_monto,
+                                        "frecuencia": nueva_freq,
+                                        "total_puestos": int(nuevo_puestos),
+                                        "fechas_cronograma": nuevas_fechas_str
+                                    }).eq("id", bolso_id).execute()
+                                    st.success("¡Configuración actualizada con éxito!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error al actualizar: {e}")
                         
                         st.markdown("---")
                         st.markdown("### 🗓️ Cronograma, Participantes y Estados")
@@ -145,7 +160,6 @@ else:
                         resp_det = supabase.table("detalles_bolso").select("*").eq("bolso_id", bolso_id).execute()
                         datos_existentes = resp_det.data if resp_det.data else []
                         
-                        # Rellenar datos iniciales si faltan o cambiaron los puestos
                         if not datos_existentes or len(set(r["nro_puesto"] for r in datos_existentes)) != total_puestos:
                             for i in range(1, total_puestos + 1):
                                 for idx, fecha in enumerate(fechas_bolso):
@@ -167,7 +181,6 @@ else:
                         for row in datos_existentes:
                             puesto = row["nro_puesto"]
                             fecha = row["fecha"]
-                            # Solo procesar si la fecha está dentro de las fechas configuradas del bolso
                             if puesto <= total_puestos and fecha in fechas_bolso:
                                 if puesto not in matriz_dict:
                                     matriz_dict[puesto] = {
@@ -207,7 +220,6 @@ else:
                                         nombre_part = row["Participante"]
                                         for fecha in fechas_bolso:
                                             if fecha in row:
-                                                # Comprobar si ya existe el registro para actualizarlo, o insertarlo si es una fecha nueva
                                                 check_f = supabase.table("detalles_bolso").select("id").eq("bolso_id", bolso_id).eq("nro_puesto", puesto).eq("fecha", fecha).execute()
                                                 if check_f.data:
                                                     supabase.table("detalles_bolso").update({
@@ -233,40 +245,42 @@ else:
         except Exception as e:
             st.error(f"Error al cargar los bolsos: {e}")
 
-    # PESTAÑA 2: Crear un nuevo bolso
+    # PESTAÑA 2: Crear un nuevo bolso con calendarios dinámicos
     with tab_crear:
         st.subheader("Crear un Nuevo Bolso / San")
         
-        with st.form("form_nuevo_bolso", clear_on_submit=True):
-            nombre_bolso = st.text_input("Nombre del Bolso")
-            monto_cuota = st.number_input("Monto por Cuota", min_value=0.0, format="%.2f", value=50.0)
-            frecuencia = st.selectbox("Frecuencia", ["Quincenal", "Semanal", "Mensual"])
-            total_puestos = st.number_input("Número Total de Puestos", min_value=1, value=7, step=1)
-            
-            st.markdown("---")
-            st.write("📅 Fechas del Cronograma (escribe las fechas separadas por comas)")
-            fechas_iniciales_input = st.text_input("Fechas", value="15-sept, 30-sept, 15-oct, 30-oct, 15-nov, 30-nov, 15-dic")
-            
-            submit_bolso = st.form_submit_button("Guardar Bolso", type="primary")
-            
-            if submit_bolso:
-                if nombre_bolso:
-                    try:
-                        res_ins = supabase.table("bolsos").insert({
-                            "nombre": nombre_bolso,
-                            "monto_cuota": monto_cuota,
-                            "frecuencia": frecuencia,
-                            "total_puestos": int(total_puestos),
-                            "creador_id": usuario_actual.id,
-                            "fechas_cronograma": fechas_iniciales_input
-                        }).execute()
-                        
-                        st.success(f"¡Bolso '{nombre_bolso}' creado exitosamente!")
-                        st.rerun()
-                    except Exception as e:
-                        st.error(f"Error al guardar en Supabase: Asegúrate de haber agregado la columna 'fechas_cronograma' en tu tabla de bolsos o usa una migración. Detalle: {e}")
-                else:
-                    st.warning("Por favor ingresa al menos el nombre del bolso.")
+        nombre_bolso = st.text_input("Nombre del Bolso", key="new_nombre")
+        monto_cuota = st.number_input("Monto por Cuota", min_value=0.0, format="%.2f", value=50.0, key="new_monto")
+        frecuencia = st.selectbox("Frecuencia", ["Quincenal", "Semanal", "Mensual"], key="new_freq")
+        total_puestos = st.number_input("Número Total de Puestos", min_value=1, value=7, step=1, key="new_puestos")
+        
+        st.markdown("---")
+        st.markdown("📅 **Selecciona la fecha correspondiente para cada Puesto:**")
+        
+        fechas_seleccionadas = []
+        for i in range(1, int(total_puestos) + 1):
+            f = st.date_input(f"Fecha para el Puesto {i}", key=f"fecha_puesto_{i}")
+            fechas_seleccionadas.append(f.strftime("%d-%b"))
+        
+        if st.button("Guardar Bolso", type="primary", key="btn_guardar_nuevo_bolso"):
+            if nombre_bolso:
+                try:
+                    fechas_str = ", ".join(fechas_seleccionadas)
+                    supabase.table("bolsos").insert({
+                        "nombre": nombre_bolso,
+                        "monto_cuota": monto_cuota,
+                        "frecuencia": frecuencia,
+                        "total_puestos": int(total_puestos),
+                        "creador_id": usuario_actual.id,
+                        "fechas_cronograma": fechas_str
+                    }).execute()
+                    
+                    st.success(f"¡Bolso '{nombre_bolso}' creado exitosamente!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error al guardar en Supabase: {e}")
+            else:
+                st.warning("Por favor ingresa al menos el nombre del bolso.")
 
     # PESTAÑA 3: Bolsos compartidos conmigo
     with tab_compartidos:
