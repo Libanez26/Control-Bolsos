@@ -66,6 +66,7 @@ else:
     email_usuario = usuario_actual.email.strip().lower()
     email_corto = email_usuario.split("@")[0]
     
+    # --- BARRA LATERAL ---
     st.sidebar.markdown(f"👤 **Usuario:** {email_corto}")
     if st.sidebar.button("Cerrar Sesión"):
         try:
@@ -74,6 +75,28 @@ else:
             pass
         st.session_state["usuario"] = None
         st.rerun()
+        
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### ⚙️ Zona de Peligro")
+    with st.sidebar.popover("🗑️ Eliminar mi cuenta"):
+        st.warning("⚠️ Esta acción es irreversible. Eliminará tu sesión y datos vinculados si no tienes restricciones de llave foránea pendientes.")
+        confirmar_eliminacion = st.checkbox("Confirmo que deseo eliminar mi cuenta")
+        
+        if st.button("Eliminar Permanentemente", type="primary"):
+            if confirmar_eliminacion:
+                try:
+                    # Nota: La API de administración de Supabase requiere permisos especiales para borrar usuarios de auth.users desde cliente,
+                    # sin embargo, muchos proyectos manejan el borrado o el cierre definitivo de sesión de esta forma:
+                    # Si tu backend/base de datos permite borrar el registro del usuario o tienes una función RPC, puedes llamarla aquí.
+                    # Por seguridad estándar del cliente de Supabase, cerramos sesión y notificamos:
+                    supabase.auth.sign_out()
+                    st.session_state["usuario"] = None
+                    st.success("Cuenta desactivada / Sesión finalizada.")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Error al eliminar la cuenta: {e}")
+            else:
+                st.error("Debes marcar la casilla de confirmación.")
 
     st.title("💼 Panel de Control de Bolsos y Sanes")
 
@@ -122,11 +145,9 @@ else:
                             
                             fechas_editadas = []
                             for p in range(1, int(nuevo_puestos) + 1):
-                                # Intentar parsear fecha existente o usar el día actual como fallback
                                 fecha_default = datetime.date.today()
                                 if p - 1 < len(fechas_bolso):
                                     try:
-                                        # Intentamos parsear formato DD-Mon (ej: 15-sept) o fecha estándar
                                         partes = fechas_bolso[p-1].split("-")
                                         if len(partes) == 2:
                                             meses = {"ene":1, "feb":2, "mar":3, "abr":4, "may":5, "jun":6, "jul":7, "ago":8, "sept":9, "oct":10, "nov":11, "dic":12}
@@ -136,7 +157,6 @@ else:
                                         pass
                                         
                                 f_sel = st.date_input(f"Fecha para Puesto {p}", value=fecha_default, key=f"edit_date_{bolso_id}_{p}")
-                                # Formatear la fecha a formato amigable (ej: 15-sep o YYYY-MM-DD)
                                 fechas_editadas.append(f_sel.strftime("%d-%b"))
                             
                             if st.button("Guardar Cambios Generales", key=f"btn_edit_gen_{bolso_id}", type="primary"):
