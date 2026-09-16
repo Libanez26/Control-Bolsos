@@ -57,7 +57,7 @@ if st.session_state["usuario"] is None:
 else:
     # --- APLICACIÓN PRINCIPAL ---
     usuario_actual = st.session_state["usuario"]
-    email_corto = usuario_actual.email.split("@")[0] # Extraer un identificador corto del correo
+    email_corto = usuario_actual.email.split("@")[0]
     
     st.sidebar.markdown(f"👤 **Usuario:** {email_corto}")
     if st.sidebar.button("Cerrar Sesión"):
@@ -74,7 +74,7 @@ else:
         "⚙️ Control de Permisos"
     ])
 
-    # PESTAÑA 1: Ver bolsos y matriz interactiva con selectores desplegables
+    # PESTAÑA 1: Ver bolsos, edición general y matriz interactiva
     with tab_mis_bolsos:
         st.subheader("Tus Bolsos Activos")
         
@@ -93,6 +93,30 @@ else:
                         col2.metric("Frecuencia", bolso['frecuencia'])
                         col3.metric("Total Puestos", total_puestos)
                         
+                        # --- SECCIÓN DE EDICIÓN GENERAL DEL BOLSO ---
+                        with st.popover("✏️ Editar configuración de este Bolso"):
+                            with st.form(f"form_editar_{bolso_id}"):
+                                nuevo_nombre = st.text_input("Nombre del Bolso", value=bolso['nombre'])
+                                nuevo_monto = st.number_input("Monto por Cuota", min_value=0.0, format="%.2f", value=float(bolso['monto_cuota']))
+                                idx_freq = ["Quincenal", "Semanal", "Mensual"].index(bolso['frecuencia']) if bolso['frecuencia'] in ["Quincenal", "Semanal", "Mensual"] else 0
+                                nueva_freq = st.selectbox("Frecuencia", ["Quincenal", "Semanal", "Mensual"], index=idx_freq)
+                                nuevo_puestos = st.number_input("Número Total de Puestos", min_value=1, value=total_puestos, step=1)
+                                
+                                btn_actualizar_bolso = st.form_submit_button("Guardar Cambios Generales", type="primary")
+                                
+                                if btn_actualizar_bolso:
+                                    try:
+                                        supabase.table("bolsos").update({
+                                            "nombre": nuevo_nombre,
+                                            "monto_cuota": nuevo_monto,
+                                            "frecuencia": nueva_freq,
+                                            "total_puestos": int(nuevo_puestos)
+                                        }).eq("id", bolso_id).execute()
+                                        st.success("¡Configuración actualizada con éxito!")
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Error al actualizar: {e}")
+                        
                         st.markdown("---")
                         st.markdown("### 🗓️ Cronograma, Participantes y Estados")
                         st.info("Escribe los nombres de los participantes y utiliza los menús desplegables en cada fecha para cambiar los estados.")
@@ -103,21 +127,23 @@ else:
                         resp_det = supabase.table("detalles_bolso").select("*").eq("bolso_id", bolso_id).execute()
                         datos_existentes = resp_det.data if resp_det.data else []
                         
-                        # Si no hay registros creados aún, inicializarlos en blanco/automático con nombres genéricos
-                        if not datos_existentes:
-                            nuevos_filas = []
+                        # Si no hay registros o cambió el total de puestos, ajustarlos automáticamente
+                        if not datos_existentes or len(set(r["nro_puesto"] for r in datos_existentes)) != total_puestos:
+                            # Opcional: si quieres limpiar o rellenar puestos nuevos
                             for i in range(1, total_puestos + 1):
                                 for idx, fecha in enumerate(fechas_quincenales):
-                                    estado_inicial = "🟢 Toca Cobrar" if (idx + 1) == i else "⏳ Pendiente"
-                                    nuevos_filas.append({
-                                        "bolso_id": bolso_id,
-                                        "nro_puesto": i,
-                                        "participante": f"Participante {i}",
-                                        "fecha": fecha,
-                                        "estado": estado_inicial,
-                                        "actualizado_por": email_corto
-                                    })
-                            supabase.table("detalles_bolso").insert(nuevos_filas).execute()
+                                    # Verificar si ya existe este puesto y fecha
+                                    existe = any(d["nro_puesto"] == i and d["fecha"] == fecha for d in datos_existentes)
+                                    if not existe:
+                                        estado_inicial = "🟢 Toca Cobrar" if (idx + 1) == i else "⏳ Pendiente"
+                                        supabase.table("detalles_bolso").insert({
+                                            "bolso_id": bolso_id,
+                                            "nro_puesto": i,
+                                            "participante": f"Participante {i}",
+                                            "fecha": fecha,
+                                            "estado": estado_inicial,
+                                            "actualizado_por": email_corto
+                                        }).execute()
                             resp_det = supabase.table("detalles_bolso").select("*").eq("bolso_id", bolso_id).execute()
                             datos_existentes = resp_det.data
                         
@@ -125,23 +151,24 @@ else:
                         matriz_dict = {}
                         for row in datos_existentes:
                             puesto = row["nro_puesto"]
-                            if puesto not in matriz_dict:
-                                matriz_dict[puesto] = {
-                                    "Nro. Puesto": puesto,
-                                    "Participante": row["participante"]
-                                }
-                            matriz_dict[puesto][row["fecha"]] = row["estado"]
+                            if puesto <= total_puestos:  # Solo mostrar hasta el total de puestos configurados
+                                if puesto not in matriz_dict:
+                                    matriz_dict[puesto] = {
+                                        "Nro. Puesto": puesto,
+                                        "Participante": row["participante"]
+                                    }
+                                matriz_dict[puesto][row["fecha"]] = row["estado"]
                         
                         df_matriz = pd.DataFrame(list(matriz_dict.values()))
                         
-                        # Opciones exactas para el menú desplegable en cada celda de fecha (Solo Pendiente, Toca Cobrar y Pagado)
+                        # Opciones exactas para el menú desplegable en cada celda de fecha
                         opciones_estado = [
                             "⏳ Pendiente", 
                             "🟢 Toca Cobrar", 
                             f"✅ Pagado ({email_corto})"
                         ]
                         
-                        # Configurar columnas (Nro bloqueado, Participante texto, Fechas con selectores)
+                        # Configurar columnas
                         column_config_dict = {
                             "Nro. Puesto": st.column_config.NumberColumn("Nro.", disabled=True, width="small"),
                             "Participante": st.column_config.TextColumn("Participante", width="medium"),
@@ -172,7 +199,6 @@ else:
                                     for fecha in fechas_quincenales:
                                         if fecha in row:
                                             estado_actual = row[fecha]
-                                            # Actualizar en Supabase
                                             supabase.table("detalles_bolso").update({
                                                 "participante": nombre_part,
                                                 "estado": estado_actual,
