@@ -132,10 +132,7 @@ else:
                 pass
             cookie_manager.delete("dispositivo_confiable_token_bolsos")
             
-        try:
-            supabase.auth.sign_out()
-        except Exception:
-            pass
+        # Nota: Se omite supabase.auth.signOut() para evitar que afecte a otros dispositivos.
             
         st.session_state["usuario"] = None
         st.rerun()
@@ -143,7 +140,7 @@ else:
     st.sidebar.markdown("---")
     st.sidebar.markdown("### ⚙️ Zona de Peligro")
     with st.sidebar.popover("🗑️ Eliminar mi cuenta"):
-        st.warning("⚠️ **Atención:** Esta acción es totalmente irreversible. Borrará tu cuenta de forma definitiva y todos tus bolsos y datos asociados desaparecerán para siempre.")
+        st.warning("⚠️ **Atención:** Esta acción es totalmente irreversible. Borrará tu cuenta de forma definitiva y todos iyong bolsos y datos asociados desaparecerán para siempre.")
         confirmar_eliminacion = st.checkbox("Confirmo que deseo eliminar mi cuenta para siempre")
         
         if st.button("Eliminar Permanentemente", type="primary"):
@@ -158,10 +155,7 @@ else:
                         except:
                             pass
                         cookie_manager.delete("dispositivo_confiable_token_bolsos")
-                    try:
-                        supabase.auth.sign_out()
-                    except:
-                        pass
+                    
                     st.session_state["usuario"] = None
                     st.success("Tu cuenta ha sido eliminada permanentemente.")
                     st.rerun()
