@@ -145,7 +145,9 @@ else:
                         else:
                             texto_modalidad = "BS"
                     
-                    fechas_str = bolso.get('fechas_cronograma', "15-sept, 30-sept, 15-oct, 30-oct, 15-nov, 30-nov, 15-dic")
+                    fechas_str = bolso.get('fechas_cronograma')
+                    if not fechas_str:
+                        fechas_str = "15-sept, 30-sept, 15-oct, 30-oct, 15-nov, 30-nov, 15-dic"
                     fechas_bolso = [f.strip() for f in fechas_str.split(",") if f.strip()]
                     
                     with st.expander(f"📦 {bolso['nombre']} — Cuota: {simbolo}{monto_cuota:,.2f} ({texto_modalidad})"):
@@ -429,7 +431,9 @@ else:
                             else:
                                 texto_modalidad = "BS"
                         
-                        fechas_str = bolso.get('fechas_cronograma', "15-sept, 30-sept, 15-oct, 30-oct, 15-nov, 30-nov, 15-dic")
+                        fechas_str = bolso.get('fechas_cronograma')
+                        if not fechas_str:
+                            fechas_str = "15-sept, 30-sept, 15-oct, 30-oct, 15-nov, 30-nov, 15-dic"
                         fechas_bolso = [f.strip() for f in fechas_str.split(",") if f.strip()]
                         
                         with st.expander(f"📦 {bolso['nombre']} (Compartido - {nivel_acceso}) — Cuota: {simbolo}{monto_cuota:,.2f} ({texto_modalidad})"):
