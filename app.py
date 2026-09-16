@@ -79,21 +79,17 @@ else:
     st.sidebar.markdown("---")
     st.sidebar.markdown("### ⚙️ Zona de Peligro")
     with st.sidebar.popover("🗑️ Eliminar mi cuenta"):
-        st.warning("⚠️ **Atención:** Esta acción es totalmente irreversible. Borrará tu cuenta de forma definitiva y todos tus bolsos y datos asociados desaparecerán para siempre. Si en el futuro deseas volver, tendrás que registrarte de nuevo desde cero.")
+        st.warning("⚠️ **Atención:** Esta acción es totalmente irreversible. Borrará tu cuenta de forma definitiva y todos tus bolsos y datos asociados desaparecerán para siempre.")
         confirmar_eliminacion = st.checkbox("Confirmo que deseo eliminar mi cuenta para siempre")
         
         if st.button("Eliminar Permanentemente", type="primary"):
             if confirmar_eliminacion:
                 try:
-                    # Llamamos a la función RPC de Supabase que borra el usuario de auth.users
                     supabase.rpc("eliminar_cuenta_usuario").execute()
-                    
-                    # Cerramos sesión localmente y limpiamos el estado
                     try:
                         supabase.auth.sign_out()
                     except:
                         pass
-                        
                     st.session_state["usuario"] = None
                     st.success("Tu cuenta ha sido eliminada permanentemente.")
                     st.rerun()
@@ -126,20 +122,54 @@ else:
                     monto_cuota = float(bolso['monto_cuota'])
                     pozo_total = monto_cuota * total_puestos
                     
+                    # Recuperar configuración de moneda y tasa
+                    tipo_moneda = bolso.get('tipo_moneda', 'Divisa')
+                    tipo_tasa = bolso.get('tipo_tasa', 'N/A')
+                    otra_tasa = bolso.get('otra_tasa_detalle', '')
+                    
+                    # Formatear etiqueta de moneda / tasa para mostrar
+                    if tipo_moneda == "Divisa":
+                        etiqueta_moneda = "Divisa ($ / €)"
+                        simbolo = "$"
+                    else:
+                        simbolo = "Bs."
+                        if tipo_tasa == "Otra" and otra_tasa:
+                            etiqueta_moneda = f"Bolívares (Tasa: {otra_tasa})"
+                        else:
+                            etiqueta_moneda = f"Bolívares (Tasa: {tipo_tasa})"
+                    
                     fechas_str = bolso.get('fechas_cronograma', "15-sept, 30-sept, 15-oct, 30-oct, 15-nov, 30-nov, 15-dic")
                     fechas_bolso = [f.strip() for f in fechas_str.split(",") if f.strip()]
                     
-                    with st.expander(f"📦 {bolso['nombre']} — Monto Cuota: ${monto_cuota:,.2f} ({bolso['frecuencia']})"):
+                    with st.expander(f"📦 {bolso['nombre']} — Cuota: {simbolo}{monto_cuota:,.2f} ({bolso['frecuencia']} - {etiqueta_moneda})"):
                         col1, col2, col3, col4 = st.columns(4)
-                        col1.metric("Cuota por Persona", f"${monto_cuota:,.2f}")
+                        col1.metric("Cuota por Persona", f"{simbolo}{monto_cuota:,.2f}")
                         col2.metric("Total Puestos", total_puestos)
-                        col3.metric("Pozo a Recibir", f"${pozo_total:,.2f}")
+                        col3.metric("Pozo a Recibir", f"{simbolo}{pozo_total:,.2f}")
                         col4.metric("Frecuencia", bolso['frecuencia'])
                         
-                        # Edición general con selectores de fecha dinámicos
+                        st.info(f"💱 **Modalidad de pago:** {etiqueta_moneda}")
+                        
+                        # Edición general con selectores de moneda y tasa dinámicos
                         with st.popover("✏️ Editar configuración y fechas de este Bolso"):
                             nuevo_nombre = st.text_input("Nombre del Bolso", value=bolso['nombre'], key=f"edit_nom_{bolso_id}")
                             nuevo_monto = st.number_input("Monto por Cuota", min_value=0.0, format="%.2f", value=monto_cuota, key=f"edit_mont_{bolso_id}")
+                            
+                            # Selección de Moneda
+                            idx_moneda = ["Divisa", "Bolívares (Bs)"].index(tipo_moneda) if tipo_moneda in ["Divisa", "Bolívares (Bs)"] else 0
+                            nueva_moneda = st.selectbox("Tipo de Moneda", ["Divisa", "Bolívares (Bs)"], index=idx_moneda, key=f"edit_moneda_{bolso_id}")
+                            
+                            nueva_tasa = "N/A"
+                            nuevo_detalle_tasa = ""
+                            
+                            if nueva_moneda == "Bolívares (Bs)":
+                                opciones_tasas = ["BCV (Dólar)", "BCV (Euro)", "Otra"]
+                                idx_tasa = opciones_tasas.index(tipo_tasa) if tipo_tasa in opciones_tasas else 0
+                                nueva_tasa = st.selectbox("¿A qué tasa?", opciones_tasas, index=idx_tasa, key=f"edit_tasa_{bolso_id}")
+                                
+                                if nueva_tasa == "Otra":
+                                    nuevo_detalle_tasa = st.text_input("Especifique cuál tasa", value=otra_tasa, key=f"edit_otra_{bolso_id}")
+                            
                             idx_freq = ["Quincenal", "Semanal", "Mensual"].index(bolso['frecuencia']) if bolso['frecuencia'] in ["Quincenal", "Semanal", "Mensual"] else 0
                             nueva_freq = st.selectbox("Frecuencia", ["Quincenal", "Semanal", "Mensual"], index=idx_freq, key=f"edit_freq_{bolso_id}")
                             nuevo_puestos = st.number_input("Número Total de Puestos", min_value=1, value=total_puestos, step=1, key=f"edit_puest_{bolso_id}")
@@ -169,6 +199,9 @@ else:
                                     supabase.table("bolsos").update({
                                         "nombre": nuevo_nombre,
                                         "monto_cuota": nuevo_monto,
+                                        "tipo_moneda": nueva_moneda,
+                                        "tipo_tasa": nueva_tasa,
+                                        "otra_tasa_detalle": nuevo_detalle_tasa,
                                         "frecuencia": nueva_freq,
                                         "total_puestos": int(nuevo_puestos),
                                         "fechas_cronograma": nuevas_fechas_str
@@ -269,12 +302,24 @@ else:
         except Exception as e:
             st.error(f"Error al cargar los bolsos: {e}")
 
-    # PESTAÑA 2: Crear un nuevo bolso con calendarios dinámicos
+    # PESTAÑA 2: Crear un nuevo bolso con opción de divisa/bolívares y tasas
     with tab_crear:
         st.subheader("Crear un Nuevo Bolso / San")
         
         nombre_bolso = st.text_input("Nombre del Bolso", key="new_nombre")
         monto_cuota = st.number_input("Monto por Cuota", min_value=0.0, format="%.2f", value=50.0, key="new_monto")
+        
+        # Selección de moneda principal
+        tipo_moneda = st.selectbox("Tipo de Moneda", ["Divisa", "Bolívares (Bs)"], key="new_moneda")
+        
+        tipo_tasa = "N/A"
+        otra_tasa_detalle = ""
+        
+        if tipo_moneda == "Bolívares (Bs)":
+            tipo_tasa = st.selectbox("¿A qué tasa?", ["BCV (Dólar)", "BCV (Euro)", "Otra"], key="new_tasa")
+            if tipo_tasa == "Otra":
+                otra_tasa_detalle = st.text_input("Especifique cuál tasa (ej. Paralelo, Tasa propia)", key="new_otra_tasa")
+        
         frecuencia = st.selectbox("Frecuencia", ["Quincenal", "Semanal", "Mensual"], key="new_freq")
         total_puestos = st.number_input("Número Total de Puestos", min_value=1, value=7, step=1, key="new_puestos")
         
@@ -293,6 +338,9 @@ else:
                     supabase.table("bolsos").insert({
                         "nombre": nombre_bolso,
                         "monto_cuota": monto_cuota,
+                        "tipo_moneda": tipo_moneda,
+                        "tipo_tasa": tipo_tasa,
+                        "otra_tasa_detalle": otra_tasa_detalle,
                         "frecuencia": frecuencia,
                         "total_puestos": int(total_puestos),
                         "creador_id": usuario_actual.id,
@@ -331,15 +379,26 @@ else:
                         monto_cuota = float(bolso['monto_cuota'])
                         pozo_total = monto_cuota * total_puestos
                         
+                        tipo_moneda = bolso.get('tipo_moneda', 'Divisa')
+                        tipo_tasa = bolso.get('tipo_tasa', 'N/A')
+                        otra_tasa = bolso.get('otra_tasa_detalle', '')
+                        
+                        if tipo_moneda == "Divisa":
+                            etiqueta_moneda = "Divisa ($ / €)"
+                            simbolo = "$"
+                        else:
+                            simbolo = "Bs."
+                            etiqueta_moneda = f"Bolívares (Tasa: {otra_tasa if tipo_tasa == 'Otra' else tipo_tasa})"
+                        
                         fechas_str = bolso.get('fechas_cronograma', "15-sept, 30-sept, 15-oct, 30-oct, 15-nov, 30-nov, 15-dic")
                         fechas_bolso = [f.strip() for f in fechas_str.split(",") if f.strip()]
                         
                         with st.expander(f"📦 {bolso['nombre']} (Compartido - {nivel_acceso})"):
-                            st.info(f"Tienes nivel de acceso: **{nivel_acceso}**")
+                            st.info(f"Tienes nivel de acceso: **{nivel_acceso}** | Modalidad: **{etiqueta_moneda}**")
                             col1, col2, col3, col4 = st.columns(4)
-                            col1.metric("Cuota", f"${monto_cuota:,.2f}")
+                            col1.metric("Cuota", f"{simbolo}{monto_cuota:,.2f}")
                             col2.metric("Puestos", total_puestos)
-                            col3.metric("Pozo Total", f"${pozo_total:,.2f}")
+                            col3.metric("Pozo Total", f"{simbolo}{pozo_total:,.2f}")
                             col4.metric("Frecuencia", bolso['frecuencia'])
                             
                             st.markdown("---")
@@ -418,7 +477,7 @@ else:
             selected_nombre = st.selectbox("Selecciona el Bolso a compartir", list(mis_b_nombres.keys()) if mis_b_nombres else ["No hay bolsos"])
             nivel_permiso = st.selectbox("Nivel de Acceso", ["Editor", "Lectura"])
             
-            submit_permiso = st.form_submit_button("Conceder Acceso")
+            submit_permiso = st.form_submit_button("Conceder Accesso")
             
             if submit_permiso:
                 if correo_colaborador and selected_nombre != "No hay bolsos":
