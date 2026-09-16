@@ -1,6 +1,4 @@
 import datetime
-import uuid
-import extra_streamlit_components as st_cookie
 import streamlit as st
 import pandas as pd
 from supabase import Client, create_client
@@ -27,88 +25,24 @@ try:
 except Exception as e:
     st.error(f"Error al conectar con Supabase: {e}")
 
-# --- 2. GESTOR DE COOKIES ---
-cookie_manager = st_cookie.CookieManager()
-device_token_cookie = cookie_manager.get(cookie="dispositivo_confiable_token_bolsos")
-
-# --- 3. ESTADO DE SESIÓN ---
+# --- 2. ESTADO DE SESIÓN ---
 if "usuario" not in st.session_state:
     st.session_state["usuario"] = None
-if "pensum_df" not in st.session_state:
-    st.session_state["pensum_df"] = None
-if "evaluaciones" not in st.session_state:
-    st.session_state["evaluaciones"] = {}
-if "horario_df" not in st.session_state:
-    st.session_state["horario_df"] = None
-if "escala_df" not in st.session_state:
-    st.session_state["escala_df"] = pd.DataFrame([
-        {"Nivel de logro de la asignatura": "00% - 05%", "Calificación Cuantitativa": "01", "Calificación Cualitativa": "MUY DEFICIENTE"},
-        {"Nivel de logro de la asignatura": "06% - 11%", "Calificación Cuantitativa": "02", "Calificación Cualitativa": "MUY DEFICIENTE"},
-        {"Nivel de logro de la asignatura": "12% - 17%", "Calificación Cuantitativa": "03", "Calificación Cualitativa": "MUY DEFICIENTE"},
-        {"Nivel de logro de la asignatura": "18% - 23%", "Calificación Cuantitativa": "04", "Calificación Cualitativa": "MUY DEFICIENTE"},
-        {"Nivel de logro de la asignatura": "24% - 29%", "Calificación Cuantitativa": "05", "Calificación Cualitativa": "MUY DEFICIENTE"},
-        {"Nivel de logro de la asignatura": "30% - 34%", "Calificación Cuantitativa": "06", "Calificación Cualitativa": "DEFICIENTE"},
-        {"Nivel de logro de la asignatura": "35% - 39%", "Calificación Cuantitativa": "07", "Calificación Cualitativa": "DEFICIENTE"},
-        {"Nivel de logro de la asignatura": "40% - 44%", "Calificación Cuantitativa": "08", "Calificación Cualitativa": "DEFICIENTE"},
-        {"Nivel de logro de la asignatura": "45% - 49%", "Calificación Cuantitativa": "09", "Calificación Cualitativa": "DEFICIENTE"}
-    ])
 
-# --- 4. FUNCIONES DE BASE DE DATOS ---
-def cargar_datos_usuario(user_id):
-    try:
-        res = supabase.table("perfiles_usuario").select("*").eq("id", user_id).execute()
-        if res.data and len(res.data) > 0:
-            datos = res.data[0]
-            if datos.get("pensum_data"):
-                st.session_state["pensum_df"] = pd.DataFrame(datos["pensum_data"])
-            if datos.get("evaluaciones_data"):
-                st.session_state["evaluaciones"] = datos["evaluaciones_data"]
-    except Exception as e:
-        pass
-
-def guardar_datos_usuario():
-    if not st.session_state["usuario"]:
-        return
-    user_id = st.session_state["usuario"].id
-    correo = st.session_state["usuario"].email
-    data = {
-        "id": user_id,
-        "correo": correo,
-    }
-    try:
-        supabase.table("perfiles_usuario").upsert(data).execute()
-    except Exception as e:
-        pass
-
-# --- 5. RECUPERAR SESIÓN POR DISPOSITIVO (COOKIE) ---
+# Intentar recuperar la sesión automáticamente desde la caché interna de Supabase
 if st.session_state["usuario"] is None:
-    if device_token_cookie:
-        try:
-            verificacion_disp = (
-                supabase.table("dispositivos_confiados")
-                .select("*")
-                .eq("device_token", device_token_cookie)
-                .execute()
-            )
-            if verificacion_disp.data and len(verificacion_disp.data) > 0:
-                user_id_asociado = verificacion_disp.data[0]["user_id"]
-                correo_asociado = verificacion_disp.data[0].get("email", "usuario@bolsos.com")
-                
-                class UserDummy:
-                    def __init__(self, uid, uemail):
-                        self.id = uid
-                        self.email = uemail
+    try:
+        session_actual = supabase.auth.get_session()
+        if session_actual and session_actual.user:
+            st.session_state["usuario"] = session_actual.user
+    except Exception:
+        pass
 
-                st.session_state["usuario"] = UserDummy(user_id_asociado, correo_asociado)
-                cargar_datos_usuario(user_id_asociado)
-                st.rerun()
-        except Exception:
-            pass
 
 # --- PANTALLA DE LOGIN / REGISTRO ---
 if st.session_state["usuario"] is None:
     st.title("💰 App de Gestión de Bolsos (Sanes)")
-    st.subheader("Inicia sesión y marca la casilla si deseas recordar este dispositivo.")
+    st.subheader("Inicia sesión para acceder a tus bolsos.")
 
     tab_login, tab_registro = st.tabs(["🔑 Iniciar Sesión", "📝 Registrarse"])
 
@@ -116,11 +50,6 @@ if st.session_state["usuario"] is None:
         with st.form("form_login_bolsos"):
             email_login = st.text_input("Correo electrónico")
             pass_login = st.text_input("Contraseña", type="password")
-
-            recordar_dispositivo = st.checkbox(
-                "Confiar en este dispositivo (Mantener sesión abierta solo aquí)",
-                value=True
-            )
 
             submit_login = st.form_submit_button("Ingresar")
 
@@ -132,19 +61,6 @@ if st.session_state["usuario"] is None:
                     })
                     if res.user:
                         st.session_state["usuario"] = res.user
-
-                        if recordar_dispositivo:
-                            nuevo_token = str(uuid.uuid4())
-                            cookie_manager.set(
-                                "dispositivo_confiable_token_bolsos", nuevo_token, max_age=31536000
-                            )
-                            supabase.table("dispositivos_confiados").insert({
-                                "user_id": res.user.id,
-                                "device_token": nuevo_token,
-                                "email": res.user.email,
-                                "nombre_dispositivo": "Dispositivo Confiable Bolsos",
-                            }).execute()
-
                         st.success("¡Sesión iniciada con éxito!")
                         st.rerun()
                 except Exception as e:
@@ -173,58 +89,16 @@ else:
     email_usuario = getattr(usuario_actual, "email", "usuario@bolsos.com").strip().lower()
     email_corto = email_usuario.split("@")[0] if "@" in email_usuario else "usuario"
     
-    # --- PESTAÑAS PRINCIPALES ---
-    tab_mis_bolsos, tab_crear, tab_compartidos, tab_permisos, tab_divisas = st.tabs([
-        "📦 Mis Bolsos", 
-        "➕ Crear Bolso", 
-        "🤝 Compartidos", 
-        "⚙️ Permisos", 
-        "💱 Divisas"
-    ])
-
     # --- BARRA LATERAL ---
     st.sidebar.markdown(f"👤 **Usuario:** {email_corto}")
     
-    if st.sidebar.button("Cerrar Sesión en este equipo", key="btn_sidebar_cerrar"):
-        if device_token_cookie:
-            try:
-                supabase.table("dispositivos_confiados").delete().eq(
-                    "device_token", device_token_cookie
-                ).execute()
-            except Exception:
-                pass
-            cookie_manager.delete("dispositivo_confiable_token_bolsos")
-            
-        supabase.auth.sign_out()
+    if st.sidebar.button("Cerrar Sesión", key="btn_sidebar_cerrar"):
+        try:
+            supabase.auth.sign_out()
+        except Exception:
+            pass
         st.session_state["usuario"] = None
         st.rerun()
-        
-    st.sidebar.markdown("---")
-    st.sidebar.markdown("### ⚙️ Zona de Peligro")
-    with st.sidebar.popover("🗑️ Eliminar mi cuenta"):
-        st.warning("⚠️ **Atención:** Esta acción es totalmente irreversible. Borrará tu cuenta de forma definitiva y todos tus bolsos y datos asociados desaparecerán para siempre.")
-        confirmar_eliminacion = st.checkbox("Confirmo que deseo eliminar mi cuenta para siempre", key="chk_confirma_eliminar_cuenta")
-        
-        if st.button("Eliminar Permanentemente", type="primary", key="btn_ejecutar_eliminar_cuenta"):
-            if confirmar_eliminacion:
-                try:
-                    supabase.rpc("eliminar_cuenta_usuario").execute()
-                    if device_token_cookie:
-                        try:
-                            supabase.table("dispositivos_confiados").delete().eq(
-                                "device_token", device_token_cookie
-                            ).execute()
-                        except:
-                            pass
-                        cookie_manager.delete("dispositivo_confiable_token_bolsos")
-                    
-                    st.session_state["usuario"] = None
-                    st.success("Tu cuenta ha sido eliminada permanentemente.")
-                    st.rerun()
-                except Exception as e:
-                    st.error(f"Error al eliminar la cuenta: {e}")
-            else:
-                st.error("Debes marcar la casilla de confirmación.")
 
     st.title("💼 Panel de Control de Bolsos y Sanes")
 
