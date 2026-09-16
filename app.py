@@ -53,9 +53,7 @@ if st.session_state["usuario"] is None:
                         self.email = uemail
 
                 st.session_state["usuario"] = UserDummy(user_id_asociado, correo_asociado)
-                st.rerun()
             else:
-                # Si la cookie existe pero ya no está en la base de datos (usuario eliminado)
                 cookie_manager.delete("dispositivo_confiable_token_bolsos")
                 st.session_state["usuario"] = None
         except Exception:
@@ -65,13 +63,31 @@ if st.session_state["usuario"] is None:
                 pass
             st.session_state["usuario"] = None
 
-    # Verificación estándar de Supabase por si acaso
     try:
         session_data = supabase.auth.get_session()
         if session_data and session_data.user:
             st.session_state["usuario"] = session_data.user
     except Exception:
         pass
+
+# --- VALIDACIÓN DE SEGURIDAD: SI EL USUARIO FUE ELIMINADO EN SUPABASE ---
+if st.session_state["usuario"] is not None:
+    try:
+        # Validamos si el usuario real sigue activo en el servidor
+        test_sesion = supabase.auth.get_user()
+        if not test_sesion or not test_sesion.user:
+            raise Exception("Usuario ya no existe")
+    except Exception:
+        # Si la cuenta fue borrada, limpiamos todo rastro local y forzamos salida
+        if device_token_cookie:
+            try:
+                supabase.table("dispositivos_confiados").delete().eq("device_token", device_token_cookie).execute()
+            except:
+                pass
+            cookie_manager.delete("dispositivo_confiable_token_bolsos")
+        
+        st.session_state["usuario"] = None
+        st.rerun()
 
 # --- PANTALLA DE LOGIN / REGISTRO ---
 if st.session_state["usuario"] is None:
