@@ -79,19 +79,23 @@ else:
     st.sidebar.markdown("---")
     st.sidebar.markdown("### ⚙️ Zona de Peligro")
     with st.sidebar.popover("🗑️ Eliminar mi cuenta"):
-        st.warning("⚠️ Esta acción es irreversible. Eliminará tu sesión y datos vinculados si no tienes restricciones de llave foránea pendientes.")
-        confirmar_eliminacion = st.checkbox("Confirmo que deseo eliminar mi cuenta")
+        st.warning("⚠️ **Atención:** Esta acción es totalmente irreversible. Borrará tu cuenta de forma definitiva y todos tus bolsos y datos asociados desaparecerán para siempre. Si en el futuro deseas volver, tendrás que registrarte de nuevo desde cero.")
+        confirmar_eliminacion = st.checkbox("Confirmo que deseo eliminar mi cuenta para siempre")
         
         if st.button("Eliminar Permanentemente", type="primary"):
             if confirmar_eliminacion:
                 try:
-                    # Nota: La API de administración de Supabase requiere permisos especiales para borrar usuarios de auth.users desde cliente,
-                    # sin embargo, muchos proyectos manejan el borrado o el cierre definitivo de sesión de esta forma:
-                    # Si tu backend/base de datos permite borrar el registro del usuario o tienes una función RPC, puedes llamarla aquí.
-                    # Por seguridad estándar del cliente de Supabase, cerramos sesión y notificamos:
-                    supabase.auth.sign_out()
+                    # Llamamos a la función RPC de Supabase que borra el usuario de auth.users
+                    supabase.rpc("eliminar_cuenta_usuario").execute()
+                    
+                    # Cerramos sesión localmente y limpiamos el estado
+                    try:
+                        supabase.auth.sign_out()
+                    except:
+                        pass
+                        
                     st.session_state["usuario"] = None
-                    st.success("Cuenta desactivada / Sesión finalizada.")
+                    st.success("Tu cuenta ha sido eliminada permanentemente.")
                     st.rerun()
                 except Exception as e:
                     st.error(f"Error al eliminar la cuenta: {e}")
