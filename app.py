@@ -32,7 +32,7 @@ supabase = init_supabase()
 if "usuario" not in st.session_state:
     st.session_state["usuario"] = None
 
-# --- RECUPERAR SESIÓN POR DISPOSITIVO (COOKIE) ---
+# --- RECUPERAR SESIÓN POR DISPOSITIVO (COOKIE) CON LIMPIEZA AUTOMÁTICA ---
 if st.session_state["usuario"] is None:
     if device_token_cookie:
         try:
@@ -42,6 +42,7 @@ if st.session_state["usuario"] is None:
                 .eq("device_token", device_token_cookie)
                 .execute()
             )
+            
             if verificacion_disp.data and len(verificacion_disp.data) > 0:
                 user_id_asociado = verificacion_disp.data[0]["user_id"]
                 correo_asociado = verificacion_disp.data[0].get("email", "usuario@bolsos.com")
@@ -53,8 +54,16 @@ if st.session_state["usuario"] is None:
 
                 st.session_state["usuario"] = UserDummy(user_id_asociado, correo_asociado)
                 st.rerun()
+            else:
+                # Si la cookie existe pero ya no está en la base de datos (usuario eliminado)
+                cookie_manager.delete("dispositivo_confiable_token_bolsos")
+                st.session_state["usuario"] = None
         except Exception:
-            pass
+            try:
+                cookie_manager.delete("dispositivo_confiable_token_bolsos")
+            except:
+                pass
+            st.session_state["usuario"] = None
 
     # Verificación estándar de Supabase por si acaso
     try:
@@ -132,15 +141,13 @@ else:
                 pass
             cookie_manager.delete("dispositivo_confiable_token_bolsos")
             
-        # Nota: Se omite supabase.auth.signOut() para evitar que afecte a otros dispositivos.
-            
         st.session_state["usuario"] = None
         st.rerun()
         
     st.sidebar.markdown("---")
     st.sidebar.markdown("### ⚙️ Zona de Peligro")
     with st.sidebar.popover("🗑️ Eliminar mi cuenta"):
-        st.warning("⚠️ **Atención:** Esta acción es totalmente irreversible. Borrará tu cuenta de forma definitiva y todos iyong bolsos y datos asociados desaparecerán para siempre.")
+        st.warning("⚠️ **Atención:** Esta acción es totalmente irreversible. Borrará tu cuenta de forma definitiva y todos tus bolsos y datos asociados desaparecerán para siempre.")
         confirmar_eliminacion = st.checkbox("Confirmo que deseo eliminar mi cuenta para siempre")
         
         if st.button("Eliminar Permanentemente", type="primary"):
