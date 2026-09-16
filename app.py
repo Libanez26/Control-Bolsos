@@ -32,79 +32,51 @@ supabase = init_supabase()
 if "usuario" not in st.session_state:
     st.session_state["usuario"] = None
 
-# --- RECUPERAR SESIÓN POR DISPOSITIVO (COOKIE) CON LIMPIEZA AUTOMÁTICA ---
-if st.session_state["usuario"] is None:
-    if device_token_cookie:
-        try:
-            verificacion_disp = (
-                supabase.table("dispositivos_confiados")
-                .select("*")
-                .eq("device_token", device_token_cookie)
-                .execute()
-            )
-            
-            if verificacion_disp.data and len(verificacion_disp.data) > 0:
-                user_id_asociado = verificacion_disp.data[0]["user_id"]
-                correo_asociado = verificacion_disp.data[0].get("email", "usuario@bolsos.com")
-                
-                class UserDummy:
-                    def __init__(self, uid, uemail):
-                        self.id = uid
-                        self.email = uemail
-
-                st.session_state["usuario"] = UserDummy(user_id_asociado, correo_asociado)
-            else:
-                cookie_manager.delete("dispositivo_confiable_token_bolsos")
-                st.session_state["usuario"] = None
-        except Exception:
-            try:
-                cookie_manager.delete("dispositivo_confiable_token_bolsos")
-            except:
-                pass
-            st.session_state["usuario"] = None
-
+# --- RECUPERAR Y VALIDAR SESIÓN POR DISPOSITIVO ---
+if st.session_state["usuario"] is None and device_token_cookie:
     try:
-        session_data = supabase.auth.get_session()
-        if session_data and session_data.user:
-            st.session_state["usuario"] = session_data.user
-    except Exception:
-        pass
-
-# --- VALIDACIÓN DE SEGURIDAD: SI EL USUARIO FUE ELIMINADO EN SUPABASE ---
-if st.session_state["usuario"] is not None:
-    try:
-        # Validamos si el usuario real sigue activo en el servidor
-        test_sesion = supabase.auth.get_user()
-        if not test_sesion or not test_sesion.user:
-            raise Exception("Usuario ya no existe")
-    except Exception:
-        # Si la cuenta fue borrada, limpiamos todo rastro local y forzamos salida
-        if device_token_cookie:
-            try:
-                supabase.table("dispositivos_confiados").delete().eq("device_token", device_token_cookie).execute()
-            except:
-                pass
-            cookie_manager.delete("dispositivo_confiable_token_bolsos")
+        verificacion_disp = (
+            supabase.table("dispositivos_confiados")
+            .select("*")
+            .eq("device_token", device_token_cookie)
+            .execute()
+        )
         
+        # Si el token existe en la base de datos, validamos que el usuario dueño aún exista en bolsos o auth
+        if verificacion_disp.data and len(verificacion_disp.data) > 0:
+            user_id_asociado = verificacion_disp.data[0]["user_id"]
+            correo_asociado = verificacion_disp.data[0].get("email", "usuario@bolsos.com")
+            
+            class UserDummy:
+                def __init__(self, uid, uemail):
+                    self.id = uid
+                    self.email = uemail
+
+            st.session_state["usuario"] = UserDummy(user_id_asociado, correo_asociado)
+        else:
+            # Si el token no está registrado (cuenta eliminada), limpiamos la cookie de forma segura
+            cookie_manager.delete("dispositivo_confiable_token_bolsos")
+            st.session_state["usuario"] = None
+    except Exception:
         st.session_state["usuario"] = None
-        st.rerun()
 
 # --- PANTALLA DE LOGIN / REGISTRO ---
 if st.session_state["usuario"] is None:
     st.title("💰 App de Gestión de Bolsos (Sanes)")
     st.markdown("Por favor, inicia sesión o regístrate para continuar.")
     
-    modo = st.radio("Acción", ["Iniciar Sesión", "Registrarse"], horizontal=True)
-    email = st.text_input("Correo electrónico")
-    password = st.text_input("Contraseña", type="password")
+    modo = st.radio("Acción", ["Iniciar Sesión", "Registrarse"], horizontal=True, key="main_modo_auth")
+    email = st.text_input("Correo electrónico", key="main_email_auth")
+    password = st.text_input("Contraseña", type="password", key="main_pass_auth")
     
     recordar_dispositivo = st.checkbox(
         "Confiar en este dispositivo (Mantener sesión abierta solo aquí)",
-        value=True
+        value=True,
+        key="main_chk_dispositivo"
     )
     
     if modo == "Iniciar Sesión":
-        if st.button("Ingresar", type="primary"):
+        if st.button("Ingresar", type="primary", key="btn_ingresar_auth"):
             try:
                 res = supabase.auth.sign_in_with_password({"email": email, "password": password})
                 if res.user:
@@ -130,7 +102,7 @@ if st.session_state["usuario"] is None:
             except Exception as e:
                 st.error(f"Error al iniciar sesión: Verifique sus credenciales. ({e})")
     else:
-        if st.button("Crear Cuenta", type="primary"):
+        if st.button("Crear Cuenta", type="primary", key="btn_crear_auth"):
             try:
                 res = supabase.auth.sign_up({"email": email, "password": password})
                 if res.user:
@@ -147,7 +119,7 @@ else:
     # --- BARRA LATERAL ---
     st.sidebar.markdown(f"👤 **Usuario:** {email_corto}")
     
-    if st.sidebar.button("Cerrar Sesión en este equipo"):
+    if st.sidebar.button("Cerrar Sesión en este equipo", key="btn_sidebar_cerrar"):
         if device_token_cookie:
             try:
                 supabase.table("dispositivos_confiados").delete().eq(
@@ -164,9 +136,9 @@ else:
     st.sidebar.markdown("### ⚙️ Zona de Peligro")
     with st.sidebar.popover("🗑️ Eliminar mi cuenta"):
         st.warning("⚠️ **Atención:** Esta acción es totalmente irreversible. Borrará tu cuenta de forma definitiva y todos tus bolsos y datos asociados desaparecerán para siempre.")
-        confirmar_eliminacion = st.checkbox("Confirmo que deseo eliminar mi cuenta para siempre")
+        confirmar_eliminacion = st.checkbox("Confirmo que deseo eliminar mi cuenta para siempre", key="chk_confirma_eliminar_cuenta")
         
-        if st.button("Eliminar Permanentemente", type="primary"):
+        if st.button("Eliminar Permanentemente", type="primary", key="btn_ejecutar_eliminar_cuenta"):
             if confirmar_eliminacion:
                 try:
                     supabase.rpc("eliminar_cuenta_usuario").execute()
