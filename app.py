@@ -25,7 +25,6 @@ supabase = init_supabase()
 # --- ESTADO DE SESIÓN Y PERSISTENCIA AL RECARGAR ---
 if "usuario" not in st.session_state:
     st.session_state["usuario"] = None
-    # Intentar recuperar la sesión activa si el navegador se recarga
     try:
         session_data = supabase.auth.get_session()
         if session_data and session_data.user:
@@ -100,6 +99,10 @@ else:
                     monto_cuota = float(bolso['monto_cuota'])
                     pozo_total = monto_cuota * total_puestos
                     
+                    # Extraer fechas personalizadas o usar unas por defecto si no existen
+                    fechas_str = bolso.get('fechas_cronograma', "15-sept, 30-sept, 15-oct, 30-oct, 15-nov, 30-nov, 15-dic")
+                    fechas_bolso = [f.strip() for f in fechas_str.split(",") if f.strip()]
+                    
                     with st.expander(f"📦 {bolso['nombre']} — Monto Cuota: ${monto_cuota:,.2f} ({bolso['frecuencia']})"):
                         col1, col2, col3, col4 = st.columns(4)
                         col1.metric("Cuota por Persona", f"${monto_cuota:,.2f}")
@@ -107,7 +110,7 @@ else:
                         col3.metric("Pozo a Recibir", f"${pozo_total:,.2f}")
                         col4.metric("Frecuencia", bolso['frecuencia'])
                         
-                        # Edición general del bolso
+                        # Edición general del bolso (incluyendo las fechas del cronograma)
                         with st.popover("✏️ Editar configuración de este Bolso"):
                             with st.form(f"form_editar_{bolso_id}"):
                                 nuevo_nombre = st.text_input("Nombre del Bolso", value=bolso['nombre'])
@@ -115,6 +118,10 @@ else:
                                 idx_freq = ["Quincenal", "Semanal", "Mensual"].index(bolso['frecuencia']) if bolso['frecuencia'] in ["Quincenal", "Semanal", "Mensual"] else 0
                                 nueva_freq = st.selectbox("Frecuencia", ["Quincenal", "Semanal", "Mensual"], index=idx_freq)
                                 nuevo_puestos = st.number_input("Número Total de Puestos", min_value=1, value=total_puestos, step=1)
+                                
+                                st.markdown("---")
+                                st.write("📅 Fechas del Cronograma (separadas por comas)")
+                                nuevas_fechas_str = st.text_input("Ej: 01-oct, 15-oct, 01-nov, 15-nov", value=fechas_str)
                                 
                                 btn_actualizar_bolso = st.form_submit_button("Guardar Cambios Generales", type="primary")
                                 
@@ -124,7 +131,8 @@ else:
                                             "nombre": nuevo_nombre,
                                             "monto_cuota": nuevo_monto,
                                             "frecuencia": nueva_freq,
-                                            "total_puestos": int(nuevo_puestos)
+                                            "total_puestos": int(nuevo_puestos),
+                                            "fechas_cronograma": nuevas_fechas_str
                                         }).eq("id", bolso_id).execute()
                                         st.success("¡Configuración actualizada con éxito!")
                                         st.rerun()
@@ -134,14 +142,13 @@ else:
                         st.markdown("---")
                         st.markdown("### 🗓️ Cronograma, Participantes y Estados")
                         
-                        fechas_quincenales = ["15-sept", "30-sept", "15-oct", "30-oct", "15-nov", "30-nov", "15-dic"]
-                        
                         resp_det = supabase.table("detalles_bolso").select("*").eq("bolso_id", bolso_id).execute()
                         datos_existentes = resp_det.data if resp_det.data else []
                         
+                        # Rellenar datos iniciales si faltan o cambiaron los puestos
                         if not datos_existentes or len(set(r["nro_puesto"] for r in datos_existentes)) != total_puestos:
                             for i in range(1, total_puestos + 1):
-                                for idx, fecha in enumerate(fechas_quincenales):
+                                for idx, fecha in enumerate(fechas_bolso):
                                     existe = any(d["nro_puesto"] == i and d["fecha"] == fecha for d in datos_existentes)
                                     if not existe:
                                         estado_inicial = "🟢 Recibe Pozo" if (idx + 1) == i else "⏳ Pendiente"
@@ -159,45 +166,68 @@ else:
                         matriz_dict = {}
                         for row in datos_existentes:
                             puesto = row["nro_puesto"]
-                            if puesto <= total_puestos:
+                            fecha = row["fecha"]
+                            # Solo procesar si la fecha está dentro de las fechas configuradas del bolso
+                            if puesto <= total_puestos and fecha in fechas_bolso:
                                 if puesto not in matriz_dict:
                                     matriz_dict[puesto] = {
                                         "Nro. Puesto": puesto,
                                         "Participante": row["participante"]
                                     }
-                                matriz_dict[puesto][row["fecha"]] = row["estado"]
+                                matriz_dict[puesto][fecha] = row["estado"]
                         
-                        df_matriz = pd.DataFrame(list(matriz_dict.values()))
-                        opciones_estado = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Pagado ({email_corto})"]
-                        
-                        column_config_dict = {
-                            "Nro. Puesto": st.column_config.NumberColumn("Nro.", disabled=True, width="small"),
-                            "Participante": st.column_config.TextColumn("Participante", width="medium"),
-                        }
-                        
-                        for fecha in fechas_quincenales:
-                            column_config_dict[fecha] = st.column_config.SelectboxColumn(
-                                label=fecha, options=opciones_estado, required=True, width="medium"
-                            )
+                        if matriz_dict:
+                            lista_ordenada = [matriz_dict[p] for p in sorted(matriz_dict.keys()) if p in matriz_dict]
+                            df_matriz = pd.DataFrame(lista_ordenada)
+                            
+                            columnas_fijas = ["Nro. Puesto", "Participante"] + fechas_bolso
+                            for col in fechas_bolso:
+                                if col not in df_matriz.columns:
+                                    df_matriz[col] = "⏳ Pendiente"
+                            df_matriz = df_matriz[[c for c in columnas_fijas if c in df_matriz.columns]]
 
-                        df_editado = st.data_editor(df_matriz, column_config=column_config_dict, use_container_width=True, hide_index=True, key=f"editor_{bolso_id}")
-                        
-                        if st.button("Guardar Cambios del Cronograma", key=f"btn_save_{bolso_id}", type="primary"):
-                            try:
-                                for index, row in df_editado.iterrows():
-                                    puesto = row["Nro. Puesto"]
-                                    nombre_part = row["Participante"]
-                                    for fecha in fechas_quincenales:
-                                        if fecha in row:
-                                            supabase.table("detalles_bolso").update({
-                                                "participante": nombre_part,
-                                                "estado": row[fecha],
-                                                "actualizado_por": email_corto
-                                            }).eq("bolso_id", bolso_id).eq("nro_puesto", puesto).eq("fecha", fecha).execute()
-                                st.success("¡Cambios guardados exitosamente!")
-                                st.rerun()
-                            except Exception as e:
-                                st.error(f"Error al guardar los cambios: {e}")
+                            opciones_estado = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Pagado ({email_corto})"]
+                            
+                            column_config_dict = {
+                                "Nro. Puesto": st.column_config.NumberColumn("Nro.", disabled=True, width="small"),
+                                "Participante": st.column_config.TextColumn("Participante", width="medium"),
+                            }
+                            
+                            for fecha in fechas_bolso:
+                                column_config_dict[fecha] = st.column_config.SelectboxColumn(
+                                    label=fecha, options=opciones_estado, required=True, width="medium"
+                                )
+
+                            df_editado = st.data_editor(df_matriz, column_config=column_config_dict, use_container_width=True, hide_index=True, key=f"editor_{bolso_id}")
+                            
+                            if st.button("Guardar Cambios del Cronograma", key=f"btn_save_{bolso_id}", type="primary"):
+                                try:
+                                    for index, row in df_editado.iterrows():
+                                        puesto = row["Nro. Puesto"]
+                                        nombre_part = row["Participante"]
+                                        for fecha in fechas_bolso:
+                                            if fecha in row:
+                                                # Comprobar si ya existe el registro para actualizarlo, o insertarlo si es una fecha nueva
+                                                check_f = supabase.table("detalles_bolso").select("id").eq("bolso_id", bolso_id).eq("nro_puesto", puesto).eq("fecha", fecha).execute()
+                                                if check_f.data:
+                                                    supabase.table("detalles_bolso").update({
+                                                        "participante": nombre_part,
+                                                        "estado": row[fecha],
+                                                        "actualizado_por": email_corto
+                                                    }).eq("bolso_id", bolso_id).eq("nro_puesto", puesto).eq("fecha", fecha).execute()
+                                                else:
+                                                    supabase.table("detalles_bolso").insert({
+                                                        "bolso_id": bolso_id,
+                                                        "nro_puesto": puesto,
+                                                        "participante": nombre_part,
+                                                        "fecha": fecha,
+                                                        "estado": row[fecha],
+                                                        "actualizado_por": email_corto
+                                                    }).execute()
+                                    st.success("¡Cambios guardados exitosamente!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error al guardar los cambios: {e}")
             else:
                 st.info("Aún no tienes bolsos creados.")
         except Exception as e:
@@ -213,22 +243,28 @@ else:
             frecuencia = st.selectbox("Frecuencia", ["Quincenal", "Semanal", "Mensual"])
             total_puestos = st.number_input("Número Total de Puestos", min_value=1, value=7, step=1)
             
+            st.markdown("---")
+            st.write("📅 Fechas del Cronograma (escribe las fechas separadas por comas)")
+            fechas_iniciales_input = st.text_input("Fechas", value="15-sept, 30-sept, 15-oct, 30-oct, 15-nov, 30-nov, 15-dic")
+            
             submit_bolso = st.form_submit_button("Guardar Bolso", type="primary")
             
             if submit_bolso:
                 if nombre_bolso:
                     try:
-                        supabase.table("bolsos").insert({
+                        res_ins = supabase.table("bolsos").insert({
                             "nombre": nombre_bolso,
                             "monto_cuota": monto_cuota,
                             "frecuencia": frecuencia,
                             "total_puestos": int(total_puestos),
-                            "creador_id": usuario_actual.id
+                            "creador_id": usuario_actual.id,
+                            "fechas_cronograma": fechas_iniciales_input
                         }).execute()
+                        
                         st.success(f"¡Bolso '{nombre_bolso}' creado exitosamente!")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Error al guardar en Supabase: {e}")
+                        st.error(f"Error al guardar en Supabase: Asegúrate de haber agregado la columna 'fechas_cronograma' en tu tabla de bolsos o usa una migración. Detalle: {e}")
                 else:
                     st.warning("Por favor ingresa al menos el nombre del bolso.")
 
@@ -257,6 +293,9 @@ else:
                         monto_cuota = float(bolso['monto_cuota'])
                         pozo_total = monto_cuota * total_puestos
                         
+                        fechas_str = bolso.get('fechas_cronograma', "15-sept, 30-sept, 15-oct, 30-oct, 15-nov, 30-nov, 15-dic")
+                        fechas_bolso = [f.strip() for f in fechas_str.split(",") if f.strip()]
+                        
                         with st.expander(f"📦 {bolso['nombre']} (Compartido - {nivel_acceso})"):
                             st.info(f"Tienes nivel de acceso: **{nivel_acceso}**")
                             col1, col2, col3, col4 = st.columns(4)
@@ -266,30 +305,38 @@ else:
                             col4.metric("Frecuencia", bolso['frecuencia'])
                             
                             st.markdown("---")
-                            fechas_quincenales = ["15-sept", "30-sept", "15-oct", "30-oct", "15-nov", "30-nov", "15-dic"]
                             resp_det = supabase.table("detalles_bolso").select("*").eq("bolso_id", b_id).execute()
                             datos_existentes = resp_det.data if resp_det.data else []
                             
                             matriz_dict = {}
                             for row in datos_existentes:
                                 puesto = row["nro_puesto"]
-                                if puesto <= total_puestos:
+                                fecha = row["fecha"]
+                                if puesto <= total_puestos and fecha in fechas_bolso:
                                     if puesto not in matriz_dict:
                                         matriz_dict[puesto] = {
                                             "Nro. Puesto": puesto,
                                             "Participante": row["participante"]
                                         }
-                                    matriz_dict[puesto][row["fecha"]] = row["estado"]
+                                    matriz_dict[puesto][fecha] = row["estado"]
                             
                             if matriz_dict:
-                                df_matriz = pd.DataFrame(list(matriz_dict.values()))
+                                lista_ordenada = [matriz_dict[p] for p in sorted(matriz_dict.keys()) if p in matriz_dict]
+                                df_matriz = pd.DataFrame(lista_ordenada)
+                                
+                                columnas_fijas = ["Nro. Puesto", "Participante"] + fechas_bolso
+                                for col in fechas_bolso:
+                                    if col not in df_matriz.columns:
+                                        df_matriz[col] = "⏳ Pendiente"
+                                df_matriz = df_matriz[[c for c in columnas_fijas if c in df_matriz.columns]]
+
                                 opciones_estado = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Pagado ({email_corto})"]
                                 
                                 column_config_dict = {
                                     "Nro. Puesto": st.column_config.NumberColumn("Nro.", disabled=True, width="small"),
                                     "Participante": st.column_config.TextColumn("Participante", disabled=(nivel_acceso == "Lectura"), width="medium"),
                                 }
-                                for fecha in fechas_quincenales:
+                                for fecha in fechas_bolso:
                                     column_config_dict[fecha] = st.column_config.SelectboxColumn(
                                         label=fecha, options=opciones_estado, required=True, width="medium", disabled=(nivel_acceso == "Lectura")
                                     )
@@ -301,7 +348,7 @@ else:
                                         try:
                                             for index, row in df_editado.iterrows():
                                                 puesto = row["Nro. Puesto"]
-                                                for fecha in fechas_quincenales:
+                                                for fecha in fechas_bolso:
                                                     if fecha in row:
                                                         supabase.table("detalles_bolso").update({
                                                             "participante": row["Participante"],
