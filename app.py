@@ -57,8 +57,9 @@ if st.session_state["usuario"] is None:
 else:
     # --- APLICACIÓN PRINCIPAL ---
     usuario_actual = st.session_state["usuario"]
+    email_corto = usuario_actual.email.split("@")[0] # Extraer un identificador corto del correo
     
-    st.sidebar.markdown(f"👤 **Usuario:** {usuario_actual.email}")
+    st.sidebar.markdown(f"👤 **Usuario:** {email_corto}")
     if st.sidebar.button("Cerrar Sesión"):
         supabase.auth.sign_out()
         st.session_state["usuario"] = None
@@ -73,7 +74,7 @@ else:
         "⚙️ Control de Permisos"
     ])
 
-    # PESTAÑA 1: Ver bolsos en formato limpio con desplegable de detalles y matriz por fechas
+    # PESTAÑA 1: Ver bolsos y matriz interactiva protegida y editable
     with tab_mis_bolsos:
         st.subheader("Tus Bolsos Activos")
         
@@ -83,44 +84,84 @@ else:
             
             if bolsos:
                 for bolso in bolsos:
-                    # Contenedor desplegable (Expander) para cada bolso
+                    bolso_id = bolso['id']
+                    total_puestos = int(bolso['total_puestos'])
+                    
                     with st.expander(f"📦 {bolso['nombre']} — Monto: ${bolso['monto_cuota']} ({bolso['frecuencia']})"):
                         col1, col2, col3 = st.columns(3)
                         col1.metric("Monto por Cuota", f"${bolso['monto_cuota']}")
                         col2.metric("Frecuencia", bolso['frecuencia'])
-                        col3.metric("Total Puestos", bolso['total_puestos'])
+                        col3.metric("Total Puestos", total_puestos)
                         
                         st.markdown("---")
-                        st.markdown("### 🗓️ Cronograma y Turnos de Cobro (Matriz por Fechas)")
+                        st.markdown("### 🗓️ Cronograma, Participantes y Estados")
+                        st.info("Escribe los nombres de los participantes y selecciona el estado de cada fecha (Pendiente, Toca Cobrar, Pagado, etc.).")
                         
-                        # Fechas quincenales automáticas de ejemplo (como tu referencia)
-                        fechas_quincenales = [
-                            "15-sept", "30-sept", "15-oct", "30-oct", 
-                            "15-nov", "30-nov", "15-dic"
-                        ]
+                        fechas_quincenales = ["15-sept", "30-sept", "15-oct", "30-oct", "15-nov", "30-nov", "15-dic"]
                         
-                        nombres_default = ["Luis I", "Yaidi", "Dioselina", "Dana", "Daniel", "María O", "Roberto"]
-                        total_puestos = int(bolso['total_puestos'])
+                        # Consultar si ya existen registros en detalles_bolso para este bolso
+                        resp_det = supabase.table("detalles_bolso").select("*").eq("bolso_id", bolso_id).execute()
+                        datos_existentes = resp_det.data if resp_det.data else []
                         
-                        # Construir matriz cruzando participantes con fechas de cobro
-                        matriz_data = []
-                        for i in range(1, total_puestos + 1):
-                            nombre_part = nombres_default[i-1] if i-1 < len(nombres_default) else f"Participante {i}"
-                            
-                            fila = {"Nro": i, "Participante": nombre_part}
-                            
-                            # Asignar la celda verde (Toca Cobrar) en la fecha correspondiente a su puesto
-                            for idx, fecha in enumerate(fechas_quincenales):
-                                if (idx + 1) == i:
-                                    fila[fecha] = "🟢 Toca Cobrar"
-                                else:
-                                    fila[fecha] = "⏳ Pendiente"
-                            matriz_data.append(fila)
+                        # Si no hay registros creados aún, inicializarlos en blanco/automático
+                        if not datos_existentes:
+                            nuevos_filas = []
+                            for i in range(1, total_puestos + 1):
+                                for idx, fecha in enumerate(fechas_quincenales):
+                                    estado_inicial = "🟢 Toca Cobrar" if (idx + 1) == i else "⏳ Pendiente"
+                                    nuevos_filas.append({
+                                        "bolso_id": bolso_id,
+                                        "nro_puesto": i,
+                                        "participante": f"Participante {i}",
+                                        "fecha": fecha,
+                                        "estado": estado_inicial,
+                                        "actualizado_por": email_corto
+                                    })
+                            supabase.table("detalles_bolso").insert(nuevos_filas).execute()
+                            resp_det = supabase.table("detalles_bolso").select("*").eq("bolso_id", bolso_id).execute()
+                            datos_existentes = resp_det.data
                         
-                        df_matriz = pd.DataFrame(matriz_data)
+                        # Reorganizar los datos en formato de matriz para mostrar en pantalla
+                        matriz_dict = {}
+                        for row in datos_existentes:
+                            puesto = row["nro_puesto"]
+                            if puesto not in matriz_dict:
+                                matriz_dict[puesto] = {
+                                    "Nro. Puesto": puesto,
+                                    "Participante": row["participante"]
+                                }
+                            matriz_dict[puesto][row["fecha"]] = row["estado"]
                         
-                        # Mostrar la tabla interactiva editable dentro del desplegable
-                        st.data_editor(df_matriz, use_container_width=True, hide_index=True)
+                        df_matriz = pd.DataFrame(list(matriz_dict.values()))
+                        
+                        # Editor de tabla interactiva en Streamlit
+                        df_editado = st.data_editor(
+                            df_matriz, 
+                            use_container_width=True, 
+                            hide_index=True,
+                            key=f"editor_{bolso_id}"
+                        )
+                        
+                        if st.button("Guardar Cambios del Cronograma", key=f"btn_save_{bolso_id}", type="primary"):
+                            try:
+                                # Actualizar cada celda modificada en la base de datos
+                                for index, row in df_editado.iterrows():
+                                    puesto = row["Nro. Puesto"]
+                                    nombre_part = row["Participante"]
+                                    for fecha in fechas_quincenales:
+                                        if fecha in row:
+                                            estado_actual = row[fecha]
+                                            # Actualizar en Supabase
+                                            supabase.table("detalles_bolso").update({
+                                                "participante": nombre_part,
+                                                "estado": estado_actual,
+                                                "actualizado_por": email_corto
+                                            }).eq("bolso_id", bolso_id).eq("nro_puesto", puesto).eq("fecha", fecha).execute()
+                                
+                                st.success("¡Cambios guardados exitosamente!")
+                                st.rerun()
+                            except Exception as e:
+                                st.error(f"Error al guardar los cambios: {e}")
             else:
                 st.info("Aún no tienes bolsos creados. Ve a la pestaña 'Nuevo Bolso' para registrar el primero.")
         except Exception as e:
@@ -149,7 +190,7 @@ else:
                             "creador_id": usuario_actual.id
                         }
                         supabase.table("bolsos").insert(data_insert).execute()
-                        st.success(f"¡Bolso '{nombre_bolso}' creado y guardado exitosamente!")
+                        st.success(f"¡Bolso '{nombre_bolso}' creado exitosamente! Ya puedes configurarlo en 'Mis Bolsos'.")
                         st.rerun()
                     except Exception as e:
                         st.error(f"Error al guardar en Supabase: {e}")
@@ -164,7 +205,7 @@ else:
     # PESTAÑA 4: Gestión de permisos
     with tab_permisos:
         st.subheader("Configuración de Colaboradores")
-        st.write("Comparte el acceso a tus bolsos con el segundo organizador ingresando su correo electrónico.")
+        st.write("Comparte el acceso a tus bolsos ingresando el correo del colaborador.")
         
         with st.form("form_permisos"):
             correo_colaborador = st.text_input("Correo electrónico del colaborador")
@@ -175,7 +216,7 @@ else:
                 mis_b_nombres = {}
                 
             selected_nombre = st.selectbox("Selecciona el Bolso a compartir", list(mis_b_nombres.keys()) if mis_b_nombres else ["No hay bolsos"])
-            nivel_permiso = st.selectbox("Nivel de Acceso", ["Editor (Puede modificar pagos y turnos)", "Lectura (Solo ver)"])
+            nivel_permiso = st.selectbox("Nivel de Acceso", ["Editor", "Lectura"])
             
             submit_permiso = st.form_submit_button("Conceder Acceso")
             
