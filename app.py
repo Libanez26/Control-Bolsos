@@ -341,7 +341,7 @@ else:
                                         st.error("Debes marcar la casilla de confirmación.")
                         
                         st.markdown("---")
-                        st.markdown("### 🗓️ Cronograma, Participantes y Estados")
+                        st.markdown("### 🗓️ Cronograma, Participantes y Estados con Notas")
                         
                         resp_det = supabase.table("detalles_bolso").select("*").eq("bolso_id", bolso_id).execute()
                         datos_existentes = resp_det.data if resp_det.data else []
@@ -358,6 +358,7 @@ else:
                                             "participante": f"Participante {i}",
                                             "fecha": fecha,
                                             "estado": estado_inicial,
+                                            "nota": "",
                                             "actualizado_por": email_corto
                                         }).execute()
                             resp_det = supabase.table("detalles_bolso").select("*").eq("bolso_id", bolso_id).execute()
@@ -374,26 +375,43 @@ else:
                                         "Participante": row["participante"]
                                     }
                                 matriz_dict[puesto][fecha] = row["estado"]
+                                matriz_dict[puesto][f"Nota | {fecha}"] = row.get("nota", "")
                         
                         if matriz_dict:
                             lista_ordenada = [matriz_dict[p] for p in sorted(matriz_dict.keys()) if p in matriz_dict]
                             df_matriz = pd.DataFrame(lista_ordenada)
                             
-                            columnas_fijas = ["Nro. Puesto", "Participante"] + fechas_bolso
+                            # Construir columnas fijas asegurando las de estado y nota
+                            columnas_fijas = ["Nro. Puesto", "Participante"]
+                            for fecha in fechas_bolso:
+                                columnas_fijas.append(fecha)
+                                columnas_fijas.append(f"Nota | {fecha}")
+
                             for col in fechas_bolso:
                                 if col not in df_matriz.columns:
                                     df_matriz[col] = "⏳ Pendiente"
+                            for fecha in fechas_bolso:
+                                nota_col = f"Nota | {fecha}"
+                                if nota_col not in df_matriz.columns:
+                                    df_matriz[nota_col] = ""
+
                             df_matriz = df_matriz[[c for c in columnas_fijas if c in df_matriz.columns]]
 
                             # --- SELECTOR DE VISIBILIDAD DE COLUMNAS (OJITO) ---
-                            with st.popover("👁️ Ocultar / Mostrar Columnas"):
+                            with st.popover("👁️ Ocultar / Mostrar Fechas y Notas"):
                                 st.markdown("**Selecciona las fechas visibles:**")
                                 vis_cols = {}
                                 for col in fechas_bolso:
                                     vis_cols[col] = st.checkbox(f"📅 {col}", value=True, key=f"chk_col_{bolso_id}_{col}")
                             
                             fechas_visibles = [col for col in fechas_bolso if vis_cols.get(col, True)]
-                            columnas_a_mostrar = ["Nro. Puesto", "Participante"] + fechas_visibles
+                            
+                            # Armar dinámicamente qué mostrar
+                            columnas_a_mostrar = ["Nro. Puesto", "Participante"]
+                            for fecha in fechas_visibles:
+                                columnas_a_mostrar.append(fecha)
+                                columnas_a_mostrar.append(f"Nota | {fecha}")
+
                             df_matriz_filtrado = df_matriz[[c for c in columnas_a_mostrar if c in df_matriz.columns]]
 
                             opciones_base = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Cobrado (por {email_corto})"]
@@ -414,7 +432,13 @@ else:
                                     
                                 opciones_estado = list(dict.fromkeys(opciones_base + valores_existentes))
                                 column_config_dict[fecha] = st.column_config.SelectboxColumn(
-                                    label=fecha, options=opciones_estado, required=True, width="medium"
+                                    label=f"Estado {fecha}", options=opciones_estado, required=True, width="medium"
+                                )
+                                
+                                # Configurar la columna de notas como un campo de texto
+                                nota_col_key = f"Nota | {fecha}"
+                                column_config_dict[nota_col_key] = st.column_config.TextColumn(
+                                    label=f"Nota {fecha}", width="medium"
                                 )
 
                             df_editado = st.data_editor(df_matriz_filtrado, column_config=column_config_dict, use_container_width=True, hide_index=True, key=f"editor_{bolso_id}")
@@ -425,24 +449,28 @@ else:
                                         puesto = row["Nro. Puesto"]
                                         nombre_part = row["Participante"]
                                         for fecha in fechas_visibles:
-                                            if fecha in row:
-                                                check_f = supabase.table("detalles_bolso").select("id").eq("bolso_id", bolso_id).eq("nro_puesto", puesto).eq("fecha", fecha).execute()
-                                                if check_f.data:
-                                                    supabase.table("detalles_bolso").update({
-                                                        "participante": nombre_part,
-                                                        "estado": row[fecha],
-                                                        "actualizado_por": email_corto
-                                                    }).eq("bolso_id", bolso_id).eq("nro_puesto", puesto).eq("fecha", fecha).execute()
-                                                else:
-                                                    supabase.table("detalles_bolso").insert({
-                                                        "bolso_id": bolso_id,
-                                                        "nro_puesto": puesto,
-                                                        "participante": nombre_part,
-                                                        "fecha": fecha,
-                                                        "estado": row[fecha],
-                                                        "actualizado_por": email_corto
-                                                    }).execute()
-                                    st.success("¡Cambios guardados exitosamente!")
+                                            estado_val = row.get(fecha, "⏳ Pendiente")
+                                            nota_val = row.get(f"Nota | {fecha}", "")
+                                            
+                                            check_f = supabase.table("detalles_bolso").select("id").eq("bolso_id", bolso_id).eq("nro_puesto", puesto).eq("fecha", fecha).execute()
+                                            if check_f.data:
+                                                supabase.table("detalles_bolso").update({
+                                                    "participante": nombre_part,
+                                                    "estado": estado_val,
+                                                    "nota": nota_val,
+                                                    "actualizado_por": email_corto
+                                                }).eq("bolso_id", bolso_id).eq("nro_puesto", puesto).eq("fecha", fecha).execute()
+                                            else:
+                                                supabase.table("detalles_bolso").insert({
+                                                    "bolso_id": bolso_id,
+                                                    "nro_puesto": puesto,
+                                                    "participante": nombre_part,
+                                                    "fecha": fecha,
+                                                    "estado": estado_val,
+                                                    "nota": nota_val,
+                                                    "actualizado_por": email_corto
+                                                }).execute()
+                                    st.success("¡Cambios y notas guardados exitosamente!")
                                     st.rerun()
                                 except Exception as e:
                                     st.error(f"Error al guardar los cambios: {e}")
@@ -688,26 +716,41 @@ else:
                                             "Participante": row["participante"]
                                         }
                                     matriz_dict[puesto][fecha] = row["estado"]
+                                    matriz_dict[puesto][f"Nota | {fecha}"] = row.get("nota", "")
                             
                             if matriz_dict:
                                 lista_ordenada = [matriz_dict[p] for p in sorted(matriz_dict.keys()) if p in matriz_dict]
                                 df_matriz = pd.DataFrame(lista_ordenada)
                                 
-                                columnas_fijas = ["Nro. Puesto", "Participante"] + fechas_bolso
+                                columnas_fijas = ["Nro. Puesto", "Participante"]
+                                for fecha in fechas_bolso:
+                                    columnas_fijas.append(fecha)
+                                    columnas_fijas.append(f"Nota | {fecha}")
+
                                 for col in fechas_bolso:
                                     if col not in df_matriz.columns:
                                         df_matriz[col] = "⏳ Pendiente"
+                                for fecha in fechas_bolso:
+                                    nota_col = f"Nota | {fecha}"
+                                    if nota_col not in df_matriz.columns:
+                                        df_matriz[nota_col] = ""
+
                                 df_matriz = df_matriz[[c for c in columnas_fijas if c in df_matriz.columns]]
 
                                 # --- SELECTOR DE VISIBILIDAD DE COLUMNAS (OJITO) EN COMPARTIDOS ---
-                                with st.popover("👁️ Ocultar / Mostrar Columnas"):
+                                with st.popover("👁️ Ocultar / Mostrar Fechas y Notas"):
                                     st.markdown("**Selecciona las fechas visibles:**")
                                     vis_cols_shared = {}
                                     for col in fechas_bolso:
                                         vis_cols_shared[col] = st.checkbox(f"📅 {col}", value=True, key=f"chk_col_shared_{b_id}_{col}")
                                 
                                 fechas_visibles_shared = [col for col in fechas_bolso if vis_cols_shared.get(col, True)]
-                                columnas_a_mostrar_shared = ["Nro. Puesto", "Participante"] + fechas_visibles_shared
+                                
+                                columnas_a_mostrar_shared = ["Nro. Puesto", "Participante"]
+                                for fecha in fechas_visibles_shared:
+                                    columnas_a_mostrar_shared.append(fecha)
+                                    columnas_a_mostrar_shared.append(f"Nota | {fecha}")
+
                                 df_matriz_filtrado_shared = df_matriz[[c for c in columnas_a_mostrar_shared if c in df_matriz.columns]]
 
                                 es_solo_lectura = (nivel_acceso == "Lectura")
@@ -729,7 +772,12 @@ else:
                                         
                                     opciones_estado = list(dict.fromkeys(opciones_base + valores_existentes))
                                     column_config_dict[fecha] = st.column_config.SelectboxColumn(
-                                        label=fecha, options=opciones_estado, required=True, width="medium", disabled=es_solo_lectura
+                                        label=f"Estado {fecha}", options=opciones_estado, required=True, width="medium", disabled=es_solo_lectura
+                                    )
+                                    
+                                    nota_col_key = f"Nota | {fecha}"
+                                    column_config_dict[nota_col_key] = st.column_config.TextColumn(
+                                        label=f"Nota {fecha}", width="medium", disabled=es_solo_lectura
                                     )
 
                                 df_editado = st.data_editor(df_matriz_filtrado_shared, column_config=column_config_dict, use_container_width=True, hide_index=True, key=f"editor_shared_{b_id}_{idx}")
@@ -739,14 +787,18 @@ else:
                                         try:
                                             for index, row in df_editado.iterrows():
                                                 puesto = row["Nro. Puesto"]
+                                                nombre_part = row["Participante"]
                                                 for fecha in fechas_visibles_shared:
-                                                    if fecha in row:
-                                                        supabase.table("detalles_bolso").update({
-                                                            "participante": row["Participante"],
-                                                            "estado": row[fecha],
-                                                            "actualizado_por": email_corto
-                                                        }).eq("bolso_id", b_id).eq("nro_puesto", puesto).eq("fecha", fecha).execute()
-                                            st.success("¡Cambios guardados con éxito!")
+                                                    estado_val = row.get(fecha, "⏳ Pendiente")
+                                                    nota_val = row.get(f"Nota | {fecha}", "")
+                                                    
+                                                    supabase.table("detalles_bolso").update({
+                                                        "participante": nombre_part,
+                                                        "estado": estado_val,
+                                                        "nota": nota_val,
+                                                        "actualizado_por": email_corto
+                                                    }).eq("bolso_id", b_id).eq("nro_puesto", puesto).eq("fecha", fecha).execute()
+                                            st.success("¡Cambios y notas guardados con éxito!")
                                             st.rerun()
                                         except Exception as e:
                                             st.error(f"Error al guardar: {e}")
@@ -917,7 +969,7 @@ else:
                 with col_bt_1:
                     if st.button("💾 Guardar Cambios", type="primary", key="btn_guardar_cambios_divisas"):
                         try:
-                            for idx, row in df_divisas_editado.iterrows():
+                            for idx, row in df_editado.iterrows():
                                 reg_id = df_divisas.iloc[idx]["id"]
                                 supabase.table("divisas").update({
                                     "operacion": row["Operación"],
