@@ -344,7 +344,7 @@ else:
                                     df_matriz[col] = "⏳ Pendiente"
                             df_matriz = df_matriz[[c for c in columnas_fijas if c in df_matriz.columns]]
 
-                            opciones_base = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Pagado (por {email_corto})"]
+                            opciones_base = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Cobrado (por {email_corto})"]
                             
                             column_config_dict = {
                                 "Nro. Puesto": st.column_config.NumberColumn("Nro.", disabled=True, width="small"),
@@ -615,7 +615,7 @@ else:
                                 df_matriz = df_matriz[[c for c in columnas_fijas if c in df_matriz.columns]]
 
                                 es_solo_lectura = (nivel_acceso == "Lectura")
-                                opciones_base = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Pagado (por {email_corto})"]
+                                opciones_base = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Cobrado (por {email_corto})"]
                                 
                                 column_config_dict = {
                                     "Nro. Puesto": st.column_config.NumberColumn("Nro.", disabled=True, width="small"),
