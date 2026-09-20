@@ -795,23 +795,11 @@ else:
                 else:
                     st.warning("Verifica el correo y que tengas bolsos creados.")
 
-    # PESTAÑA 5: Compra/Venta Dólares
+    # PESTAÑA 5: Compra/Venta Dólares (Migrada a Supabase)
     with tab_divisas:
         st.subheader("💱 Control de Compra y Venta de Dólares")
         st.write("Registra las operaciones indicando quién vende, quién compra, los montos y los estados de entrega.")
         
-        if "divisas_registros" not in st.session_state:
-            st.session_state["divisas_registros"] = [
-                {
-                    "Operación": "VENDIDO",
-                    "Monto ($)": 20.0,
-                    "Vendedor": "name",
-                    "Comprador": "name",
-                    "Me Entregaron": True,
-                    "Entregué": False
-                }
-            ]
-
         with st.form("form_nueva_divisa", clear_on_submit=True):
             st.markdown("### ➕ Registrar Nueva Operación")
             
@@ -839,16 +827,20 @@ else:
             
             if btn_guardar_divisa:
                 if nombre_vendedor.strip() and nombre_comprador.strip():
-                    st.session_state["divisas_registros"].append({
-                        "Operación": tipo_operacion,
-                        "Monto ($)": monto_divisa,
-                        "Vendedor": nombre_vendedor.strip(),
-                        "Comprador": nombre_comprador.strip(),
-                        "Me Entregaron": chk_me_entregaron,
-                        "Entregué": chk_entregue
-                    })
-                    st.success("¡Operación registrada con éxito!")
-                    st.rerun()
+                    try:
+                        supabase.table("divisas").insert({
+                            "user_id": usuario_actual.id,
+                            "operacion": tipo_operacion,
+                            "monto": monto_divisa,
+                            "vendedor": nombre_vendedor.strip(),
+                            "comprador": nombre_comprador.strip(),
+                            "me_entregaron": chk_me_entregaron,
+                            "entregue": chk_entregue
+                        }).execute()
+                        st.success("¡Operación registrada con éxito en Supabase!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error al guardar la operación: {e}")
                 else:
                     st.warning("Por favor ingresa tanto el nombre del vendedor como el del comprador.")
 
@@ -856,64 +848,103 @@ else:
         st.subheader("📋 Listado y Control de Operaciones")
         st.write("Puedes editar directamente los campos o marcar las casillas de verificación para actualizar el estado al instante.")
 
-        if st.session_state["divisas_registros"]:
-            df_divisas = pd.DataFrame(st.session_state["divisas_registros"])
-            
-            columnas_config_divisas = {
-                "Operación": st.column_config.SelectboxColumn(
-                    "Operación",
-                    options=["VENDIDO", "COMPRADO"],
-                    required=True,
-                    width="small"
-                ),
-                "Monto ($)": st.column_config.NumberColumn(
-                    "Monto ($)",
-                    format="$%.2f",
-                    min_value=0.0,
-                    required=True,
-                    width="small"
-                ),
-                "Vendedor": st.column_config.TextColumn(
-                    "Vendedor",
-                    required=True,
-                    width="medium"
-                ),
-                "Comprador": st.column_config.TextColumn(
-                    "Comprador",
-                    required=True,
-                    width="medium"
-                ),
-                "Me Entregaron": st.column_config.CheckboxColumn(
-                    "Me Entregaron",
-                    required=True,
-                    width="small"
-                ),
-                "Entregué": st.column_config.CheckboxColumn(
-                    "Entregué",
-                    required=True,
-                    width="small"
-                ),
-            }
+        try:
+            resp_divisas = supabase.table("divisas").select("*").eq("user_id", usuario_actual.id).order("created_at", desc=False).execute()
+            registros_db = resp_divisas.data if resp_divisas.data else []
 
-            df_divisas_editado = st.data_editor(
-                df_divisas,
-                column_config=columnas_config_divisas,
-                use_container_width=True,
-                hide_index=True,
-                key="editor_tabla_divisas"
-            )
+            if registros_db:
+                # Preparamos los datos para mostrarlos amigablemente en el DataFrame
+                lista_para_df = []
+                for r in registros_db:
+                    lista_para_df.append({
+                        "id": r["id"],
+                        "Operación": r["operacion"],
+                        "Monto ($)": float(r["monto"]),
+                        "Vendedor": r["vendedor"],
+                        "Comprador": r["comprador"],
+                        "Me Entregaron": r["me_entregaron"],
+                        "Entregué": r["entregue"]
+                    })
 
-            col_bt_1, col_bt_2 = st.columns([1, 4])
-            
-            with col_bt_1:
-                if st.button("💾 Guardar Cambios", type="primary", key="btn_guardar_cambios_divisas"):
-                    st.session_state["divisas_registros"] = df_divisas_editado.to_dict(orient="records")
-                    st.success("¡Cambios actualizados correctamente!")
-                    st.rerun()
-                    
-            with col_bt_2:
-                if st.button("🗑️ Limpiar Todo el Historial", key="btn_limpiar_divisas"):
-                    st.session_state["divisas_registros"] = []
-                    st.rerun()
-        else:
-            st.info("No hay operaciones de compra/venta registradas todavía.")
+                df_divisas = pd.DataFrame(lista_para_df)
+                # Ocultamos la columna 'id' para que no estorbe visualmente al usuario en la tabla
+                df_mostrar = df_divisas.drop(columns=["id"])
+
+                columnas_config_divisas = {
+                    "Operación": st.column_config.SelectboxColumn(
+                        "Operación",
+                        options=["VENDIDO", "COMPRADO"],
+                        required=True,
+                        width="small"
+                    ),
+                    "Monto ($)": st.column_config.NumberColumn(
+                        "Monto ($)",
+                        format="$%.2f",
+                        min_value=0.0,
+                        required=True,
+                        width="small"
+                    ),
+                    "Vendedor": st.column_config.TextColumn(
+                        "Vendedor",
+                        required=True,
+                        width="medium"
+                    ),
+                    "Comprador": st.column_config.TextColumn(
+                        "Comprador",
+                        required=True,
+                        width="medium"
+                    ),
+                    "Me Entregaron": st.column_config.CheckboxColumn(
+                        "Me Entregaron",
+                        required=True,
+                        width="small"
+                    ),
+                    "Entregué": st.column_config.CheckboxColumn(
+                        "Entregué",
+                        required=True,
+                        width="small"
+                    ),
+                }
+
+                df_divisas_editado = st.data_editor(
+                    df_mostrar,
+                    column_config=columnas_config_divisas,
+                    use_container_width=True,
+                    hide_index=True,
+                    key="editor_tabla_divisas"
+                )
+
+                col_bt_1, col_bt_2 = st.columns([1, 4])
+                
+                with col_bt_1:
+                    if st.button("💾 Guardar Cambios", type="primary", key="btn_guardar_cambios_divisas"):
+                        try:
+                            # Actualizamos cada registro fila por fila en Supabase basándonos en su ID oculto
+                            for idx, row in df_divisas_editado.iterrows():
+                                reg_id = df_divisas.iloc[idx]["id"]
+                                supabase.table("divisas").update({
+                                    "operacion": row["Operación"],
+                                    "monto": row["Monto ($)"],
+                                    "vendedor": row["Vendedor"],
+                                    "comprador": row["Comprador"],
+                                    "me_entregaron": row["Me Entregaron"],
+                                    "entregue": row["Entregué"]
+                                }).eq("id", reg_id).execute()
+
+                            st.success("¡Cambios actualizados correctamente en Supabase!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error al actualizar los cambios: {e}")
+                        
+                with col_bt_2:
+                    if st.button("🗑️ Limpiar Todo el Historial", key="btn_limpiar_divisas"):
+                        try:
+                            supabase.table("divisas").delete().eq("user_id", usuario_actual.id).execute()
+                            st.success("¡Historial borrado por completo!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Error al limpiar el historial: {e}")
+            else:
+                st.info("No hay operaciones de compra/venta registradas todavía.")
+        except Exception as e:
+            st.error(f"Error al cargar las operaciones de divisas: {e}")
