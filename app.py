@@ -208,7 +208,6 @@ else:
                     otra_tasa = bolso.get('otra_tasa_detalle', '')
                     tasa_guardada = bolso.get('tasa_valor')
                     
-                    # Usar la tasa guardada en el bolso (o respaldo global si no existe)
                     if tasa_guardada is not None:
                         tasa_aplicada = float(tasa_guardada)
                     else:
@@ -386,6 +385,17 @@ else:
                                     df_matriz[col] = "⏳ Pendiente"
                             df_matriz = df_matriz[[c for c in columnas_fijas if c in df_matriz.columns]]
 
+                            # --- SELECTOR DE VISIBILIDAD DE COLUMNAS (OJITO) ---
+                            with st.popover("👁️ Ocultar / Mostrar Columnas"):
+                                st.markdown("**Selecciona las fechas visibles:**")
+                                vis_cols = {}
+                                for col in fechas_bolso:
+                                    vis_cols[col] = st.checkbox(f"📅 {col}", value=True, key=f"chk_col_{bolso_id}_{col}")
+                            
+                            fechas_visibles = [col for col in fechas_bolso if vis_cols.get(col, True)]
+                            columnas_a_mostrar = ["Nro. Puesto", "Participante"] + fechas_visibles
+                            df_matriz_filtrado = df_matriz[[c for c in columnas_a_mostrar if c in df_matriz.columns]]
+
                             opciones_base = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Cobrado (por {email_corto})"]
                             
                             column_config_dict = {
@@ -393,9 +403,9 @@ else:
                                 "Participante": st.column_config.TextColumn("Participante", width="medium"),
                             }
                             
-                            for fecha in fechas_bolso:
-                                if fecha in df_matriz.columns:
-                                    serie_fecha = df_matriz[fecha]
+                            for fecha in fechas_visibles:
+                                if fecha in df_matriz_filtrado.columns:
+                                    serie_fecha = df_matriz_filtrado[fecha]
                                     if isinstance(serie_fecha, pd.DataFrame):
                                         serie_fecha = serie_fecha.iloc[:, 0]
                                     valores_existentes = serie_fecha.dropna().unique().tolist()
@@ -407,14 +417,14 @@ else:
                                     label=fecha, options=opciones_estado, required=True, width="medium"
                                 )
 
-                            df_editado = st.data_editor(df_matriz, column_config=column_config_dict, use_container_width=True, hide_index=True, key=f"editor_{bolso_id}")
+                            df_editado = st.data_editor(df_matriz_filtrado, column_config=column_config_dict, use_container_width=True, hide_index=True, key=f"editor_{bolso_id}")
                             
                             if st.button("Guardar Cambios del Cronograma", key=f"btn_save_{bolso_id}", type="primary"):
                                 try:
                                     for index, row in df_editado.iterrows():
                                         puesto = row["Nro. Puesto"]
                                         nombre_part = row["Participante"]
-                                        for fecha in fechas_bolso:
+                                        for fecha in fechas_visibles:
                                             if fecha in row:
                                                 check_f = supabase.table("detalles_bolso").select("id").eq("bolso_id", bolso_id).eq("nro_puesto", puesto).eq("fecha", fecha).execute()
                                                 if check_f.data:
@@ -689,6 +699,17 @@ else:
                                         df_matriz[col] = "⏳ Pendiente"
                                 df_matriz = df_matriz[[c for c in columnas_fijas if c in df_matriz.columns]]
 
+                                # --- SELECTOR DE VISIBILIDAD DE COLUMNAS (OJITO) EN COMPARTIDOS ---
+                                with st.popover("👁️ Ocultar / Mostrar Columnas"):
+                                    st.markdown("**Selecciona las fechas visibles:**")
+                                    vis_cols_shared = {}
+                                    for col in fechas_bolso:
+                                        vis_cols_shared[col] = st.checkbox(f"📅 {col}", value=True, key=f"chk_col_shared_{b_id}_{col}")
+                                
+                                fechas_visibles_shared = [col for col in fechas_bolso if vis_cols_shared.get(col, True)]
+                                columnas_a_mostrar_shared = ["Nro. Puesto", "Participante"] + fechas_visibles_shared
+                                df_matriz_filtrado_shared = df_matriz[[c for c in columnas_a_mostrar_shared if c in df_matriz.columns]]
+
                                 es_solo_lectura = (nivel_acceso == "Lectura")
                                 opciones_base = ["⏳ Pendiente", "🟢 Recibe Pozo", f"✅ Cobrado (por {email_corto})"]
                                 
@@ -697,9 +718,9 @@ else:
                                     "Participante": st.column_config.TextColumn("Participante", disabled=es_solo_lectura, width="medium"),
                                 }
                                 
-                                for fecha in fechas_bolso:
-                                    if fecha in df_matriz.columns:
-                                        serie_fecha = df_matriz[fecha]
+                                for fecha in fechas_visibles_shared:
+                                    if fecha in df_matriz_filtrado_shared.columns:
+                                        serie_fecha = df_matriz_filtrado_shared[fecha]
                                         if isinstance(serie_fecha, pd.DataFrame):
                                             serie_fecha = serie_fecha.iloc[:, 0]
                                         valores_existentes = serie_fecha.dropna().unique().tolist()
@@ -711,14 +732,14 @@ else:
                                         label=fecha, options=opciones_estado, required=True, width="medium", disabled=es_solo_lectura
                                     )
 
-                                df_editado = st.data_editor(df_matriz, column_config=column_config_dict, use_container_width=True, hide_index=True, key=f"editor_shared_{b_id}_{idx}")
+                                df_editado = st.data_editor(df_matriz_filtrado_shared, column_config=column_config_dict, use_container_width=True, hide_index=True, key=f"editor_shared_{b_id}_{idx}")
                                 
                                 if nivel_acceso == "Editor":
                                     if st.button("Guardar Cambios Compartidos", key=f"btn_save_shared_{b_id}_{idx}", type="primary"):
                                         try:
                                             for index, row in df_editado.iterrows():
                                                 puesto = row["Nro. Puesto"]
-                                                for fecha in fechas_bolso:
+                                                for fecha in fechas_visibles_shared:
                                                     if fecha in row:
                                                         supabase.table("detalles_bolso").update({
                                                             "participante": row["Participante"],
