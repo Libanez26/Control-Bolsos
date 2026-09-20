@@ -34,11 +34,11 @@ if "usuario" not in st.session_state:
 
 # --- INICIALIZAR TASAS INTERACTIVAS EN SESIÓN ---
 if "tasa_bcv_dolar_val" not in st.session_state:
-    st.session_state["tasa_bcv_dolar_val"] = 40.00
+    st.session_state["tasa_bcv_dolar_val"] = 36.50
 if "tasa_bcv_euro_val" not in st.session_state:
-    st.session_state["tasa_bcv_euro_val"] = 43.50
+    st.session_state["tasa_bcv_euro_val"] = 40.00
 if "tasa_otra_val" not in st.session_state:
-    st.session_state["tasa_otra_val"] = 41.00
+    st.session_state["tasa_otra_val"] = 38.00
 
 # --- RECUPERAR Y VALIDAR SESIÓN POR DISPOSITIVO ---
 if st.session_state["usuario"] is None and device_token_cookie:
@@ -126,8 +126,8 @@ else:
     st.sidebar.markdown(f"👤 **Usuario:** {email_corto}")
     
     st.sidebar.markdown("---")
-    st.sidebar.markdown("### 💱 Tasas del Día (Interactivas)")
-    st.sidebar.markdown("Actualiza aquí las tasas para calcular el cobro exacto en Bs:")
+    st.sidebar.markdown("### 💱 Tasas Globales de Referencia")
+    st.sidebar.markdown("Valores orientativos rápidos:")
     st.session_state["tasa_bcv_dolar_val"] = st.sidebar.number_input("Tasa BCV Dólar (Bs/USD)", min_value=0.0, format="%.2f", value=st.session_state["tasa_bcv_dolar_val"])
     st.session_state["tasa_bcv_euro_val"] = st.sidebar.number_input("Tasa BCV Euro (Bs/EUR)", min_value=0.0, format="%.2f", value=st.session_state["tasa_bcv_euro_val"])
     st.session_state["tasa_otra_val"] = st.sidebar.number_input("Tasa Personalizada/Otra (Bs)", min_value=0.0, format="%.2f", value=st.session_state["tasa_otra_val"])
@@ -206,16 +206,20 @@ else:
                     tipo_moneda = bolso.get('tipo_moneda', 'Divisa')
                     tipo_tasa = bolso.get('tipo_tasa', 'N/A')
                     otra_tasa = bolso.get('otra_tasa_detalle', '')
+                    tasa_guardada = bolso.get('tasa_valor')
                     
-                    # Selección dinámica de la tasa activa de la barra lateral
-                    if tipo_tasa == "BCV (Dólar)":
-                        tasa_aplicada = st.session_state["tasa_bcv_dolar_val"]
-                    elif tipo_tasa == "BCV (Euro)":
-                        tasa_aplicada = st.session_state["tasa_bcv_euro_val"]
-                    elif tipo_tasa == "Otra":
-                        tasa_aplicada = st.session_state["tasa_otra_val"]
+                    # Usar la tasa guardada en el bolso (o respaldo global si no existe)
+                    if tasa_guardada is not None:
+                        tasa_aplicada = float(tasa_guardada)
                     else:
-                        tasa_aplicada = 1.0
+                        if tipo_tasa == "BCV (Dólar)":
+                            tasa_aplicada = st.session_state["tasa_bcv_dolar_val"]
+                        elif tipo_tasa == "BCV (Euro)":
+                            tasa_aplicada = st.session_state["tasa_bcv_euro_val"]
+                        elif tipo_tasa == "Otra":
+                            tasa_aplicada = st.session_state["tasa_otra_val"]
+                        else:
+                            tasa_aplicada = 1.0
 
                     if tipo_moneda == "Divisa":
                         simbolo = "$"
@@ -246,7 +250,7 @@ else:
                         if tipo_moneda == "Bolívares (Bs)":
                             col1.metric("Cuota Base (USD)", f"${monto_cuota:,.2f}", f"Equiv. Bs: {monto_cobro_efectivo:,.2f}")
                         else:
-                            col1.metric("Cuota Base (USD)", f"${monto_cuota:,.2f}")
+                            col1.metric("Cuota por Persona", f"${monto_cuota:,.2f}")
                         col2.metric("Total Puestos", total_puestos)
                         col3.metric("Pozo a Recibir", f"{simbolo}{pozo_total:,.2f}")
                         col4.metric("Frecuencia", bolso['frecuencia'])
@@ -265,6 +269,7 @@ else:
                                 
                                 nueva_tasa = "N/A"
                                 nuevo_detalle_tasa = ""
+                                nuevo_tasa_valor = 1.0
                                 
                                 if nueva_moneda == "Bolívares (Bs)":
                                     opciones_tasas = ["BCV (Dólar)", "BCV (Euro)", "Otra"]
@@ -273,6 +278,9 @@ else:
                                     
                                     if nueva_tasa == "Otra":
                                         nuevo_detalle_tasa = st.text_input("Especifique cuál tasa", value=otra_tasa, key=f"edit_otra_{bolso_id}")
+                                    
+                                    val_tasa_default = float(tasa_guardada) if tasa_guardada is not None else tasa_aplicada
+                                    nuevo_tasa_valor = st.number_input("Valor actual de la Tasa (Bs)", min_value=0.0, format="%.2f", value=val_tasa_default, key=f"edit_tasa_val_{bolso_id}")
                                 
                                 idx_freq = ["Quincenal", "Semanal", "Mensual"].index(bolso['frecuencia']) if bolso['frecuencia'] in ["Quincenal", "Semanal", "Mensual"] else 0
                                 nueva_freq = st.selectbox("Frecuencia", ["Quincenal", "Semanal", "Mensual"], index=idx_freq, key=f"edit_freq_{bolso_id}")
@@ -306,6 +314,7 @@ else:
                                             "tipo_moneda": nueva_moneda,
                                             "tipo_tasa": nueva_tasa,
                                             "otra_tasa_detalle": nuevo_detalle_tasa,
+                                            "tasa_valor": nuevo_tasa_valor,
                                             "frecuencia": nueva_freq,
                                             "total_puestos": int(nuevo_puestos),
                                             "fechas_cronograma": nuevas_fechas_str
@@ -442,13 +451,17 @@ else:
         
         tipo_tasa = "N/A"
         otra_tasa_detalle = ""
+        tasa_valor = 1.0
         
         if tipo_moneda == "Bolívares (Bs)":
-            st.info("💡 **Nota:** El valor base del bolso se define en **Dólares ($)**, pero se calculará y cobrará en **Bolívares (Bs)** según la tasa seleccionada y la tasa del día activa en la barra lateral.")
+            st.info("💡 **Nota:** El valor base del bolso se define en **Dólares ($)**, pero se calculará y cobrará en **Bolívares (Bs)** según la tasa diaria que indiques.")
             monto_cuota = st.number_input("Monto Base por Cuota (en Dólares $)", min_value=0.0, format="%.2f", value=50.0, key="new_monto")
             tipo_tasa = st.selectbox("¿A qué tasa se cobrará?", ["BCV (Dólar)", "BCV (Euro)", "Otra"], key="new_tasa")
             if tipo_tasa == "Otra":
                 otra_tasa_detalle = st.text_input("Especifique cuál tasa", key="new_otra_tasa")
+            
+            tasa_def = st.session_state["tasa_bcv_euro_val"] if tipo_tasa == "BCV (Euro)" else st.session_state["tasa_bcv_dolar_val"]
+            tasa_valor = st.number_input("Valor de la Tasa del Día (Bs)", min_value=0.0, format="%.2f", value=tasa_def, key="new_tasa_valor")
         else:
             monto_cuota = st.number_input("Monto por Cuota ($)", min_value=0.0, format="%.2f", value=50.0, key="new_monto")
         
@@ -473,6 +486,7 @@ else:
                         "tipo_moneda": tipo_moneda,
                         "tipo_tasa": tipo_tasa,
                         "otra_tasa_detalle": otra_tasa_detalle,
+                        "tasa_valor": tasa_valor,
                         "frecuencia": frecuencia,
                         "total_puestos": int(total_puestos),
                         "creador_id": usuario_actual.id,
@@ -519,16 +533,19 @@ else:
                         tipo_moneda = bolso.get('tipo_moneda', 'Divisa')
                         tipo_tasa = bolso.get('tipo_tasa', 'N/A')
                         otra_tasa = bolso.get('otra_tasa_detalle', '')
+                        tasa_guardada = bolso.get('tasa_valor')
                         
-                        # Selección dinámica de la tasa activa de la barra lateral
-                        if tipo_tasa == "BCV (Dólar)":
-                            tasa_aplicada = st.session_state["tasa_bcv_dolar_val"]
-                        elif tipo_tasa == "BCV (Euro)":
-                            tasa_aplicada = st.session_state["tasa_bcv_euro_val"]
-                        elif tipo_tasa == "Otra":
-                            tasa_aplicada = st.session_state["tasa_otra_val"]
+                        if tasa_guardada is not None:
+                            tasa_aplicada = float(tasa_guardada)
                         else:
-                            tasa_aplicada = 1.0
+                            if tipo_tasa == "BCV (Dólar)":
+                                tasa_aplicada = st.session_state["tasa_bcv_dolar_val"]
+                            elif tipo_tasa == "BCV (Euro)":
+                                tasa_aplicada = st.session_state["tasa_bcv_euro_val"]
+                            elif tipo_tasa == "Otra":
+                                tasa_aplicada = st.session_state["tasa_otra_val"]
+                            else:
+                                tasa_aplicada = 1.0
 
                         if tipo_moneda == "Divisa":
                             simbolo = "$"
@@ -559,9 +576,9 @@ else:
                             if tipo_moneda == "Bolívares (Bs)":
                                 col1.metric("Cuota Base (USD)", f"${monto_cuota:,.2f}", f"Equiv. Bs: {monto_cobro_efectivo:,.2f}")
                             else:
-                                col1.metric("Cuota Base (USD)", f"${monto_cuota:,.2f}")
-                            col2.metric("Total Puestos", total_puestos)
-                            col3.metric("Pozo a Recibir", f"{simbolo}{pozo_total:,.2f}")
+                                col1.metric("Cuota", f"${monto_cuota:,.2f}")
+                            col2.metric("Puestos", total_puestos)
+                            col3.metric("Pozo Total", f"{simbolo}{pozo_total:,.2f}")
                             col4.metric("Frecuencia", bolso['frecuencia'])
                             
                             st.markdown("---")
@@ -576,6 +593,7 @@ else:
                                     
                                     nueva_tasa = "N/A"
                                     nuevo_detalle_tasa = ""
+                                    nuevo_tasa_valor = 1.0
                                     
                                     if nueva_moneda == "Bolívares (Bs)":
                                         opciones_tasas = ["BCV (Dólar)", "BCV (Euro)", "Otra"]
@@ -584,6 +602,9 @@ else:
                                         
                                         if nueva_tasa == "Otra":
                                             nuevo_detalle_tasa = st.text_input("Especifique cuál tasa", value=otra_tasa, key=f"edit_shared_otra_{b_id}")
+                                        
+                                        val_tasa_default = float(tasa_guardada) if tasa_guardada is not None else tasa_aplicada
+                                        nuevo_tasa_valor = st.number_input("Valor actual de la Tasa (Bs)", min_value=0.0, format="%.2f", value=val_tasa_default, key=f"edit_shared_tasa_val_{b_id}")
                                     
                                     idx_freq = ["Quincenal", "Semanal", "Mensual"].index(bolso['frecuencia']) if bolso['frecuencia'] in ["Quincenal", "Semanal", "Mensual"] else 0
                                     nueva_freq = st.selectbox("Frecuencia", ["Quincenal", "Semanal", "Mensual"], index=idx_freq, key=f"edit_shared_freq_{b_id}")
@@ -617,6 +638,7 @@ else:
                                                 "tipo_moneda": nueva_moneda,
                                                 "tipo_tasa": nueva_tasa,
                                                 "otra_tasa_detalle": nuevo_detalle_tasa,
+                                                "tasa_valor": nuevo_tasa_valor,
                                                 "frecuencia": nueva_freq,
                                                 "total_puestos": int(nuevo_puestos),
                                                 "fechas_cronograma": nuevas_fechas_str
