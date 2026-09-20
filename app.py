@@ -126,12 +126,6 @@ else:
     st.sidebar.markdown(f"👤 **Usuario:** {email_corto}")
     
     st.sidebar.markdown("---")
-    st.sidebar.markdown("### 💱 Tasas Globales de Referencia")
-    st.sidebar.markdown("Valores orientativos rápidos:")
-    st.session_state["tasa_bcv_dolar_val"] = st.sidebar.number_input("Tasa BCV Dólar (Bs/USD)", min_value=0.0, format="%.2f", value=st.session_state["tasa_bcv_dolar_val"])
-    st.session_state["tasa_bcv_euro_val"] = st.sidebar.number_input("Tasa BCV Euro (Bs/EUR)", min_value=0.0, format="%.2f", value=st.session_state["tasa_bcv_euro_val"])
-    st.session_state["tasa_otra_val"] = st.sidebar.number_input("Tasa Personalizada/Otra (Bs)", min_value=0.0, format="%.2f", value=st.session_state["tasa_otra_val"])
-
     st.sidebar.markdown("---")
     if st.sidebar.button("Cerrar Sesión en este equipo", key="btn_sidebar_cerrar"):
         if device_token_cookie:
