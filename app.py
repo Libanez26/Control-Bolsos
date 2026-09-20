@@ -34,11 +34,11 @@ if "usuario" not in st.session_state:
 
 # --- INICIALIZAR TASAS INTERACTIVAS EN SESIÓN ---
 if "tasa_bcv_dolar_val" not in st.session_state:
-    st.session_state["tasa_bcv_dolar_val"] = 36.50
+    st.session_state["tasa_bcv_dolar_val"] = 40.00
 if "tasa_bcv_euro_val" not in st.session_state:
-    st.session_state["tasa_bcv_euro_val"] = 40.00
+    st.session_state["tasa_bcv_euro_val"] = 43.50
 if "tasa_otra_val" not in st.session_state:
-    st.session_state["tasa_otra_val"] = 38.00
+    st.session_state["tasa_otra_val"] = 41.00
 
 # --- RECUPERAR Y VALIDAR SESIÓN POR DISPOSITIVO ---
 if st.session_state["usuario"] is None and device_token_cookie:
@@ -246,7 +246,7 @@ else:
                         if tipo_moneda == "Bolívares (Bs)":
                             col1.metric("Cuota Base (USD)", f"${monto_cuota:,.2f}", f"Equiv. Bs: {monto_cobro_efectivo:,.2f}")
                         else:
-                            col1.metric("Cuota por Persona", f"${monto_cuota:,.2f}")
+                            col1.metric("Cuota Base (USD)", f"${monto_cuota:,.2f}")
                         col2.metric("Total Puestos", total_puestos)
                         col3.metric("Pozo a Recibir", f"{simbolo}{pozo_total:,.2f}")
                         col4.metric("Frecuencia", bolso['frecuencia'])
@@ -559,9 +559,9 @@ else:
                             if tipo_moneda == "Bolívares (Bs)":
                                 col1.metric("Cuota Base (USD)", f"${monto_cuota:,.2f}", f"Equiv. Bs: {monto_cobro_efectivo:,.2f}")
                             else:
-                                col1.metric("Cuota", f"${monto_cuota:,.2f}")
-                            col2.metric("Puestos", total_puestos)
-                            col3.metric("Pozo Total", f"{simbolo}{pozo_total:,.2f}")
+                                col1.metric("Cuota Base (USD)", f"${monto_cuota:,.2f}")
+                            col2.metric("Total Puestos", total_puestos)
+                            col3.metric("Pozo a Recibir", f"{simbolo}{pozo_total:,.2f}")
                             col4.metric("Frecuencia", bolso['frecuencia'])
                             
                             st.markdown("---")
