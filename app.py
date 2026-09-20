@@ -32,6 +32,14 @@ supabase = init_supabase()
 if "usuario" not in st.session_state:
     st.session_state["usuario"] = None
 
+# --- INICIALIZAR TASAS INTERACTIVAS EN SESIÓN ---
+if "tasa_bcv_dolar_val" not in st.session_state:
+    st.session_state["tasa_bcv_dolar_val"] = 36.50
+if "tasa_bcv_euro_val" not in st.session_state:
+    st.session_state["tasa_bcv_euro_val"] = 40.00
+if "tasa_otra_val" not in st.session_state:
+    st.session_state["tasa_otra_val"] = 38.00
+
 # --- RECUPERAR Y VALIDAR SESIÓN POR DISPOSITIVO ---
 if st.session_state["usuario"] is None and device_token_cookie:
     try:
@@ -117,6 +125,14 @@ else:
     # --- BARRA LATERAL ---
     st.sidebar.markdown(f"👤 **Usuario:** {email_corto}")
     
+    st.sidebar.markdown("---")
+    st.sidebar.markdown("### 💱 Tasas del Día (Interactivas)")
+    st.sidebar.markdown("Actualiza aquí las tasas para calcular el cobro exacto en Bs:")
+    st.session_state["tasa_bcv_dolar_val"] = st.sidebar.number_input("Tasa BCV Dólar (Bs/USD)", min_value=0.0, format="%.2f", value=st.session_state["tasa_bcv_dolar_val"])
+    st.session_state["tasa_bcv_euro_val"] = st.sidebar.number_input("Tasa BCV Euro (Bs/EUR)", min_value=0.0, format="%.2f", value=st.session_state["tasa_bcv_euro_val"])
+    st.session_state["tasa_otra_val"] = st.sidebar.number_input("Tasa Personalizada/Otra (Bs)", min_value=0.0, format="%.2f", value=st.session_state["tasa_otra_val"])
+
+    st.sidebar.markdown("---")
     if st.sidebar.button("Cerrar Sesión en este equipo", key="btn_sidebar_cerrar"):
         if device_token_cookie:
             try:
@@ -186,23 +202,36 @@ else:
                     bolso_id = bolso['id']
                     total_puestos = int(bolso['total_puestos'])
                     monto_cuota = float(bolso['monto_cuota'])
-                    pozo_total = monto_cuota * total_puestos
                     
                     tipo_moneda = bolso.get('tipo_moneda', 'Divisa')
                     tipo_tasa = bolso.get('tipo_tasa', 'N/A')
                     otra_tasa = bolso.get('otra_tasa_detalle', '')
                     
+                    # Calcular tasa y conversión si es en Bolívares
+                    if tipo_tasa == "BCV (Dólar)":
+                        tasa_aplicada = st.session_state["tasa_bcv_dolar_val"]
+                    elif tipo_tasa == "BCV (Euro)":
+                        tasa_aplicada = st.session_state["tasa_bcv_euro_val"]
+                    elif tipo_tasa == "Otra":
+                        tasa_aplicada = st.session_state["tasa_otra_val"]
+                    else:
+                        tasa_aplicada = 1.0
+
                     if tipo_moneda == "Divisa":
-                        texto_modalidad = "Divisa"
                         simbolo = "$"
+                        monto_cobro_efectivo = monto_cuota
+                        pozo_total = monto_cuota * total_puestos
+                        texto_modalidad = "Divisa ($)"
                     else:
                         simbolo = "Bs."
+                        monto_cobro_efectivo = monto_cuota * tasa_aplicada
+                        pozo_total = monto_cobro_efectivo * total_puestos
                         if tipo_tasa == "BCV (Dólar)":
-                            texto_modalidad = "BS - DOLAR"
+                            texto_modalidad = f"BS (Tasa BCV Dólar: {tasa_aplicada:,.2f})"
                         elif tipo_tasa == "BCV (Euro)":
-                            texto_modalidad = "BS - EURO"
+                            texto_modalidad = f"BS (Tasa BCV Euro: {tasa_aplicada:,.2f})"
                         elif tipo_tasa == "Otra":
-                            texto_modalidad = f"BS - OTRA: {otra_tasa.upper() if otra_tasa else 'OTRA'}"
+                            texto_modalidad = f"BS ({otra_tasa.upper() if otra_tasa else 'OTRA'}: {tasa_aplicada:,.2f})"
                         else:
                             texto_modalidad = "BS"
                     
@@ -211,9 +240,13 @@ else:
                         fechas_str = "15-sept, 30-sept, 15-oct, 30-oct, 15-nov, 30-nov, 15-dic"
                     fechas_bolso = [f.strip() for f in fechas_str.split(",") if f.strip()]
                     
-                    with st.expander(f"📦 {bolso['nombre']} — Cuota: {simbolo}{monto_cuota:,.2f} ({texto_modalidad})"):
+                    titulo_expander = f"📦 {bolso['nombre']} — Base: ${monto_cuota:,.2f} USD | Cobro: {simbolo}{monto_cobro_efectivo:,.2f} ({texto_modalidad})"
+                    with st.expander(titulo_expander):
                         col1, col2, col3, col4 = st.columns(4)
-                        col1.metric("Cuota por Persona", f"{simbolo}{monto_cuota:,.2f}")
+                        if tipo_moneda == "Bolívares (Bs)":
+                            col1.metric("Cuota Base (USD)", f"${monto_cuota:,.2f}", f"Equiv. Bs: {monto_cobro_efectivo:,.2f}")
+                        else:
+                            col1.metric("Cuota por Persona", f"${monto_cuota:,.2f}")
                         col2.metric("Total Puestos", total_puestos)
                         col3.metric("Pozo a Recibir", f"{simbolo}{pozo_total:,.2f}")
                         col4.metric("Frecuencia", bolso['frecuencia'])
@@ -225,7 +258,7 @@ else:
                         with col_accion_1:
                             with st.popover("✏️ Editar configuración y fechas de este Bolso"):
                                 nuevo_nombre = st.text_input("Nombre del Bolso", value=bolso['nombre'], key=f"edit_nom_{bolso_id}")
-                                nuevo_monto = st.number_input("Monto por Cuota", min_value=0.0, format="%.2f", value=monto_cuota, key=f"edit_mont_{bolso_id}")
+                                nuevo_monto = st.number_input("Monto Base por Cuota (en Dólares $)", min_value=0.0, format="%.2f", value=monto_cuota, key=f"edit_mont_{bolso_id}")
                                 
                                 idx_moneda = ["Divisa", "Bolívares (Bs)"].index(tipo_moneda) if tipo_moneda in ["Divisa", "Bolívares (Bs)"] else 0
                                 nueva_moneda = st.selectbox("Tipo de Moneda", ["Divisa", "Bolívares (Bs)"], index=idx_moneda, key=f"edit_moneda_{bolso_id}")
@@ -404,7 +437,6 @@ else:
         st.subheader("Crear un Nuevo Bolso / San")
         
         nombre_bolso = st.text_input("Nombre del Bolso", key="new_nombre")
-        monto_cuota = st.number_input("Monto por Cuota", min_value=0.0, format="%.2f", value=50.0, key="new_monto")
         
         tipo_moneda = st.selectbox("Tipo de Moneda", ["Divisa", "Bolívares (Bs)"], key="new_moneda")
         
@@ -412,9 +444,13 @@ else:
         otra_tasa_detalle = ""
         
         if tipo_moneda == "Bolívares (Bs)":
-            tipo_tasa = st.selectbox("¿A qué tasa?", ["BCV (Dólar)", "BCV (Euro)", "Otra"], key="new_tasa")
+            st.info("💡 **Nota:** El valor base del bolso se define en **Dólares ($)**, pero se calculará y cobrará en **Bolívares (Bs)** según la tasa seleccionada y la tasa del día activa en la barra lateral.")
+            monto_cuota = st.number_input("Monto Base por Cuota (en Dólares $)", min_value=0.0, format="%.2f", value=50.0, key="new_monto")
+            tipo_tasa = st.selectbox("¿A qué tasa se cobrará?", ["BCV (Dólar)", "BCV (Euro)", "Otra"], key="new_tasa")
             if tipo_tasa == "Otra":
                 otra_tasa_detalle = st.text_input("Especifique cuál tasa", key="new_otra_tasa")
+        else:
+            monto_cuota = st.number_input("Monto por Cuota ($)", min_value=0.0, format="%.2f", value=50.0, key="new_monto")
         
         frecuencia = st.selectbox("Frecuencia", ["Quincenal", "Semanal", "Mensual"], key="new_freq")
         total_puestos = st.number_input("Número Total de Puestos", min_value=1, value=7, step=1, key="new_puestos")
@@ -479,23 +515,35 @@ else:
                         bolso = b_info_resp.data[0]
                         total_puestos = int(bolso['total_puestos'])
                         monto_cuota = float(bolso['monto_cuota'])
-                        pozo_total = monto_cuota * total_puestos
                         
                         tipo_moneda = bolso.get('tipo_moneda', 'Divisa')
                         tipo_tasa = bolso.get('tipo_tasa', 'N/A')
                         otra_tasa = bolso.get('otra_tasa_detalle', '')
                         
+                        if tipo_tasa == "BCV (Dólar)":
+                            tasa_aplicada = st.session_state["tasa_bcv_dolar_val"]
+                        elif tipo_tasa == "BCV (Euro)":
+                            tasa_aplicada = st.session_state["tasa_bcv_euro_val"]
+                        elif tipo_tasa == "Otra":
+                            tasa_aplicada = st.session_state["tasa_otra_val"]
+                        else:
+                            tasa_aplicada = 1.0
+
                         if tipo_moneda == "Divisa":
-                            texto_modalidad = "Divisa"
                             simbolo = "$"
+                            monto_cobro_efectivo = monto_cuota
+                            pozo_total = monto_cuota * total_puestos
+                            texto_modalidad = "Divisa ($)"
                         else:
                             simbolo = "Bs."
+                            monto_cobro_efectivo = monto_cuota * tasa_aplicada
+                            pozo_total = monto_cobro_efectivo * total_puestos
                             if tipo_tasa == "BCV (Dólar)":
-                                texto_modalidad = "BS - DOLAR"
+                                texto_modalidad = f"BS (Tasa BCV Dólar: {tasa_aplicada:,.2f})"
                             elif tipo_tasa == "BCV (Euro)":
-                                texto_modalidad = "BS - EURO"
+                                texto_modalidad = f"BS (Tasa BCV Euro: {tasa_aplicada:,.2f})"
                             elif tipo_tasa == "Otra":
-                                texto_modalidad = f"BS - OTRA: {otra_tasa.upper() if otra_tasa else 'OTRA'}"
+                                texto_modalidad = f"BS ({otra_tasa.upper() if otra_tasa else 'OTRA'}: {tasa_aplicada:,.2f})"
                             else:
                                 texto_modalidad = "BS"
                         
@@ -504,9 +552,13 @@ else:
                             fechas_str = "15-sept, 30-sept, 15-oct, 30-oct, 15-nov, 30-nov, 15-dic"
                         fechas_bolso = [f.strip() for f in fechas_str.split(",") if f.strip()]
                         
-                        with st.expander(f"📦 {bolso['nombre']} (Compartido - {nivel_acceso}) — Cuota: {simbolo}{monto_cuota:,.2f} ({texto_modalidad})"):
+                        titulo_exp_shared = f"📦 {bolso['nombre']} (Compartido - {nivel_acceso}) — Base: ${monto_cuota:,.2f} USD | Cobro: {simbolo}{monto_cobro_efectivo:,.2f} ({texto_modalidad})"
+                        with st.expander(titulo_exp_shared):
                             col1, col2, col3, col4 = st.columns(4)
-                            col1.metric("Cuota", f"{simbolo}{monto_cuota:,.2f}")
+                            if tipo_moneda == "Bolívares (Bs)":
+                                col1.metric("Cuota Base (USD)", f"${monto_cuota:,.2f}", f"Equiv. Bs: {monto_cobro_efectivo:,.2f}")
+                            else:
+                                col1.metric("Cuota", f"${monto_cuota:,.2f}")
                             col2.metric("Puestos", total_puestos)
                             col3.metric("Pozo Total", f"{simbolo}{pozo_total:,.2f}")
                             col4.metric("Frecuencia", bolso['frecuencia'])
@@ -516,7 +568,7 @@ else:
                             if nivel_acceso == "Editor":
                                 with st.popover("✏️ Editar configuración y fechas de este Bolso"):
                                     nuevo_nombre = st.text_input("Nombre del Bolso", value=bolso['nombre'], key=f"edit_shared_nom_{b_id}")
-                                    nuevo_monto = st.number_input("Monto por Cuota", min_value=0.0, format="%.2f", value=monto_cuota, key=f"edit_shared_mont_{b_id}")
+                                    nuevo_monto = st.number_input("Monto Base por Cuota (en Dólares $)", min_value=0.0, format="%.2f", value=monto_cuota, key=f"edit_shared_mont_{b_id}")
                                     
                                     idx_moneda = ["Divisa", "Bolívares (Bs)"].index(tipo_moneda) if tipo_moneda in ["Divisa", "Bolívares (Bs)"] else 0
                                     nueva_moneda = st.selectbox("Tipo de Moneda", ["Divisa", "Bolívares (Bs)"], index=idx_moneda, key=f"edit_shared_moneda_{b_id}")
@@ -704,11 +756,10 @@ else:
         st.subheader("💱 Control de Compra y Venta de Dólares")
         st.write("Registra las operaciones indicando quién vende, quién compra, los montos y los estados de entrega.")
         
-        # Estructura inicial en sesión si no existe
         if "divisas_registros" not in st.session_state:
             st.session_state["divisas_registros"] = [
                 {
-                    
+                    "Operación": "VENDIDO",
                     "Monto ($)": 20.0,
                     "Vendedor": "name",
                     "Comprador": "name",
@@ -717,13 +768,12 @@ else:
                 }
             ]
 
-        # Formulario para agregar nueva operación con Vendedor y Comprador
         with st.form("form_nueva_divisa", clear_on_submit=True):
             st.markdown("### ➕ Registrar Nueva Operación")
             
             col_f1, col_f2 = st.columns(2)
             with col_f1:
-                tipo_operacion = st.selectbox("Tipo de Operación", ["VENDIDO"], key="nuevo_tipo_op")
+                tipo_operacion = st.selectbox("Tipo de Operación", ["VENDIDO", "COMPRADO"], key="nuevo_tipo_op")
             with col_f2:
                 monto_divisa = st.number_input("Monto en Dólares ($)", min_value=0.0, format="%.2f", value=20.0, key="nuevo_monto_op")
             
