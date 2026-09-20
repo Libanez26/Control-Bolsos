@@ -207,7 +207,7 @@ else:
                     tipo_tasa = bolso.get('tipo_tasa', 'N/A')
                     otra_tasa = bolso.get('otra_tasa_detalle', '')
                     
-                    # Calcular tasa y conversión si es en Bolívares
+                    # Selección dinámica de la tasa activa de la barra lateral
                     if tipo_tasa == "BCV (Dólar)":
                         tasa_aplicada = st.session_state["tasa_bcv_dolar_val"]
                     elif tipo_tasa == "BCV (Euro)":
@@ -520,6 +520,7 @@ else:
                         tipo_tasa = bolso.get('tipo_tasa', 'N/A')
                         otra_tasa = bolso.get('otra_tasa_detalle', '')
                         
+                        # Selección dinámica de la tasa activa de la barra lateral
                         if tipo_tasa == "BCV (Dólar)":
                             tasa_aplicada = st.session_state["tasa_bcv_dolar_val"]
                         elif tipo_tasa == "BCV (Euro)":
