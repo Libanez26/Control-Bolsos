@@ -853,7 +853,6 @@ else:
             registros_db = resp_divisas.data if resp_divisas.data else []
 
             if registros_db:
-                # Preparamos los datos para mostrarlos amigablemente en el DataFrame
                 lista_para_df = []
                 for r in registros_db:
                     lista_para_df.append({
@@ -867,7 +866,6 @@ else:
                     })
 
                 df_divisas = pd.DataFrame(lista_para_df)
-                # Ocultamos la columna 'id' para que no estorbe visualmente al usuario en la tabla
                 df_mostrar = df_divisas.drop(columns=["id"])
 
                 columnas_config_divisas = {
@@ -919,7 +917,6 @@ else:
                 with col_bt_1:
                     if st.button("💾 Guardar Cambios", type="primary", key="btn_guardar_cambios_divisas"):
                         try:
-                            # Actualizamos cada registro fila por fila en Supabase basándonos en su ID oculto
                             for idx, row in df_divisas_editado.iterrows():
                                 reg_id = df_divisas.iloc[idx]["id"]
                                 supabase.table("divisas").update({
