@@ -853,7 +853,7 @@ else:
                 else:
                     st.warning("Verifica el correo y que tengas bolsos creados.")
 
-    # PESTAÑA 5: Compra/Venta Dólares (Con validación de errores de Supabase)
+    # PESTAÑA 5: Compra/Venta Dólares
     with tab_divisas:
         st.subheader("💱 Control de Compra y Venta de Dólares")
         st.write("Registra las operaciones indicando quién vende, quién compra, los montos y los estados de entrega.")
@@ -896,11 +896,8 @@ else:
                             "entregue": chk_entregue
                         }).execute()
                         
-                        if hasattr(res, 'error') and res.error:
-                            st.error(f"Error de Supabase al insertar: {res.error}")
-                        else:
-                            st.success("¡Operación registrada con éxito!")
-                            st.rerun()
+                        st.success("¡Operación registrada con éxito!")
+                        st.rerun()
                     except Exception as e:
                         st.error(f"Excepción al guardar: {e}")
                 else:
@@ -929,8 +926,10 @@ else:
 
                 df_divisas = pd.DataFrame(lista_para_df)
 
+                # Definimos las columnas visibles (excluyendo "id" de la interfaz gráfica)
+                columnas_visibles = ["Operación", "Monto ($)", "Vendedor", "Comprador", "Me Entregaron", "Entregué"]
+
                 columnas_config_divisas = {
-                    "id": st.column_config.TextColumn("ID", disabled=True),
                     "Operación": st.column_config.SelectboxColumn("Operación", options=["VENDIDO", "COMPRADO"], required=True),
                     "Monto (\()": st.column_config.NumberColumn("Monto (\))", format="$%.2f", min_value=0.0, required=True),
                     "Vendedor": st.column_config.TextColumn("Vendedor", required=True),
@@ -942,9 +941,9 @@ else:
                 df_divisas_editado = st.data_editor(
                     df_divisas,
                     column_config=columnas_config_divisas,
+                    column_order=columnas_visibles, # <-- Esto oculta la columna ID visualmente pero la conserva internamente
                     use_container_width=True,
                     hide_index=True,
-                    disabled=["id"],
                     key="editor_tabla_divisas_fixed"
                 )
 
@@ -964,12 +963,9 @@ else:
                                 entregue_val = row["Entregué"]
 
                                 if me_entregaron_val and entregue_val:
-                                    res_del = supabase.table("divisas").delete().eq("id", reg_id).execute()
-                                    if hasattr(res_del, 'error') and res_del.error:
-                                        st.error(f"Error al eliminar ID {reg_id}: {res_del.error}")
-                                        hubo_error = True
+                                    supabase.table("divisas").delete().eq("id", reg_id).execute()
                                 else:
-                                    res_upd = supabase.table("divisas").update({
+                                    supabase.table("divisas").update({
                                         "operacion": op_val,
                                         "monto": monto_val,
                                         "vendedor": vendedor_val,
@@ -977,25 +973,18 @@ else:
                                         "me_entregaron": me_entregaron_val,
                                         "entregue": entregue_val
                                     }).eq("id", reg_id).execute()
-                                    if hasattr(res_upd, 'error') and res_upd.error:
-                                        st.error(f"Error al actualizar ID {reg_id}: {res_upd.error}")
-                                        hubo_error = True
 
-                            if not hubo_error:
-                                st.success("¡Cambios guardados correctamente!")
-                                st.rerun()
+                            st.success("¡Cambios guardados correctamente!")
+                            st.rerun()
                         except Exception as e:
                             st.error(f"Excepción general al guardar cambios: {e}")
                         
                 with col_bt_2:
                     if st.button("🗑️ Limpiar Todo el Historial", key="btn_limpiar_divisas_fixed"):
                         try:
-                            res_all = supabase.table("divisas").delete().eq("user_id", usuario_actual.id).execute()
-                            if hasattr(res_all, 'error') and res_all.error:
-                                st.error(f"Error al limpiar historial en Supabase: {res_all.error}")
-                            else:
-                                st.success("¡Historial borrado por completo!")
-                                st.rerun()
+                            supabase.table("divisas").delete().eq("user_id", usuario_actual.id).execute()
+                            st.success("¡Historial borrado por completo!")
+                            st.rerun()
                         except Exception as e:
                             st.error(f"Excepción al limpiar historial: {e}")
             else:
