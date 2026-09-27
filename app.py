@@ -143,7 +143,7 @@ else:
     st.sidebar.markdown("---")
     st.sidebar.markdown("### ⚙️ Zona de Peligro")
     with st.sidebar.popover("🗑️ Eliminar mi cuenta"):
-        st.warning("⚠️ **Atención:** Esta acción es totalmente irreversible. Borrará tu cuenta de forma definitiva y todos iyongos bolsos y datos asociados desaparecerán para siempre.")
+        st.warning("⚠️ **Atención:** Esta acción es totalmente irreversible. Borrará tu cuenta de forma definitiva y todos tus bolsos y datos asociados desaparecerán para siempre.")
         confirmar_eliminacion = st.checkbox("Confirmo que deseo eliminar mi cuenta para siempre", key="chk_confirma_eliminar_cuenta")
         
         if st.button("Eliminar Permanentemente", type="primary", key="btn_ejecutar_eliminar_cuenta"):
@@ -853,7 +853,7 @@ else:
                 else:
                     st.warning("Verifica el correo y que tengas bolsos creados.")
 
-    # PESTAÑA 5: Compra/Venta Dólares (Migrada a Supabase)
+    # PESTAÑA 5: Compra/Venta Dólares (Actualizada con borrado y autoeleminación)
     with tab_divisas:
         st.subheader("💱 Control de Compra y Venta de Dólares")
         st.write("Registra las operaciones indicando quién vende, quién compra, los montos y los estados de entrega.")
@@ -904,7 +904,7 @@ else:
 
         st.markdown("---")
         st.subheader("📋 Listado y Control de Operaciones")
-        st.write("Puedes editar directamente los campos o marcar las casillas de verificación para actualizar el estado al instante.")
+        st.write("Puedes editar directamente los campos o marcar las casillas de verificación. Si marcas ambas casillas y guardas, la operación se eliminará automáticamente.")
 
         try:
             resp_divisas = supabase.table("divisas").select("*").eq("user_id", usuario_actual.id).order("created_at", desc=False).execute()
@@ -977,16 +977,24 @@ else:
                         try:
                             for idx, row in df_editado.iterrows():
                                 reg_id = df_divisas.iloc[idx]["id"]
-                                supabase.table("divisas").update({
-                                    "operacion": row["Operación"],
-                                    "monto": row["Monto ($)"],
-                                    "vendedor": row["Vendedor"],
-                                    "comprador": row["Comprador"],
-                                    "me_entregaron": row["Me Entregaron"],
-                                    "entregue": row["Entregué"]
-                                }).eq("id", reg_id).execute()
+                                me_entregaron_val = row["Me Entregaron"]
+                                entregue_val = row["Entregué"]
 
-                            st.success("¡Cambios actualizados correctamente en Supabase!")
+                                # Si ambas casillas están marcadas, borramos el registro automáticamente
+                                if me_entregaron_val and entregue_val:
+                                    supabase.table("divisas").delete().eq("id", reg_id).execute()
+                                else:
+                                    # De lo contrario, actualizamos normalmente
+                                    supabase.table("divisas").update({
+                                        "operacion": row["Operación"],
+                                        "monto": row["Monto ($)"],
+                                        "vendedor": row["Vendedor"],
+                                        "comprador": row["Comprador"],
+                                        "me_entregaron": me_entregaron_val,
+                                        "entregue": entregue_val
+                                    }).eq("id", reg_id).execute()
+
+                            st.success("¡Cambios actualizados y filas completadas eliminadas correctamente!")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error al actualizar los cambios: {e}")
