@@ -863,15 +863,15 @@ else:
             
             col_f1, col_f2 = st.columns(2)
             with col_f1:
-                tipo_operacion = st.selectbox("Tipo de Operación", ["VENDIDO", "COMPRADO"], key="nuevo_tipo_op")
+                tipo_operacion = st.selectbox("Tipo de Operación", ["VENDIDO"], key="nuevo_tipo_op")
             with col_f2:
                 monto_divisa = st.number_input("Monto en Dólares ($)", min_value=0.0, format="%.2f", value=20.0, key="nuevo_monto_op")
             
             col_n1, col_n2 = st.columns(2)
             with col_n1:
-                nombre_vendedor = st.text_input("Nombre del Vendedor", placeholder="Ej. Juan", key="nuevo_vendedor_op")
+                nombre_vendedor = st.text_input("Nombre del Vendedor", placeholder="Ej. Name", key="nuevo_vendedor_op")
             with col_n2:
-                nombre_comprador = st.text_input("Nombre del Comprador", placeholder="Ej. Pedro", key="nuevo_comprador_op")
+                nombre_comprador = st.text_input("Nombre del Comprador", placeholder="Ej. Name", key="nuevo_comprador_op")
             
             st.markdown("---")
             st.markdown("📦 **Estado de Entrega inicial:**")
