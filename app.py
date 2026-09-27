@@ -853,7 +853,7 @@ else:
                 else:
                     st.warning("Verifica el correo y que tengas bolsos creados.")
 
-    # PESTAÑA 5: Compra/Venta Dólares (Sin columna de ID y con borrado corregido)
+    # PESTAÑA 5: Compra/Venta Dólares (Solución Definitiva)
     with tab_divisas:
         st.subheader("💱 Control de Compra y Venta de Dólares")
         st.write("Registra las operaciones indicando quién vende, quién compra, los montos y los estados de entrega.")
@@ -895,16 +895,16 @@ else:
                             "me_entregaron": chk_me_entregaron,
                             "entregue": chk_entregue
                         }).execute()
-                        st.success("¡Operación registrada con éxito en Supabase!")
+                        st.success("¡Operación registrada con éxito!")
                         st.rerun()
                     except Exception as e:
-                        st.error(f"Error al guardar la operación: {e}")
+                        st.error(f"Error al guardar: {e}")
                 else:
-                    st.warning("Por favor ingresa tanto el nombre del vendedor como el del comprador.")
+                    st.warning("Por favor ingresa el nombre del vendedor y del comprador.")
 
         st.markdown("---")
         st.subheader("📋 Listado y Control de Operaciones")
-        st.write("Puedes editar directamente los campos o marcar las casillas de verificación. Si marcas ambas casillas y guardas, la operación se eliminará automáticamente.")
+        st.write("Puedes editar los campos o marcar las casillas. Si marcas ambas casillas y guardas, la operación se eliminará.")
 
         try:
             resp_divisas = supabase.table("divisas").select("*").eq("user_id", usuario_actual.id).order("created_at", desc=False).execute()
@@ -912,11 +912,9 @@ else:
 
             if registros_db:
                 lista_para_df = []
-                mapa_ids = {} # Diccionario para relacionar la fila visual con el ID real de Supabase
-
-                for idx, r in enumerate(registros_db):
-                    mapa_ids[idx] = r["id"]
+                for r in registros_db:
                     lista_para_df.append({
+                        "id": str(r["id"]), # Convertimos el ID explícitamente a texto para evitar problemas de tipos
                         "Operación": r["operacion"],
                         "Monto ($)": float(r["monto"]),
                         "Vendedor": r["vendedor"],
@@ -928,39 +926,13 @@ else:
                 df_divisas = pd.DataFrame(lista_para_df)
 
                 columnas_config_divisas = {
-                    "Operación": st.column_config.SelectboxColumn(
-                        "Operación",
-                        options=["VENDIDO", "COMPRADO"],
-                        required=True,
-                        width="small"
-                    ),
-                    "Monto ($)": st.column_config.NumberColumn(
-                        "Monto ($)",
-                        format="$%.2f",
-                        min_value=0.0,
-                        required=True,
-                        width="small"
-                    ),
-                    "Vendedor": st.column_config.TextColumn(
-                        "Vendedor",
-                        required=True,
-                        width="medium"
-                    ),
-                    "Comprador": st.column_config.TextColumn(
-                        "Comprador",
-                        required=True,
-                        width="medium"
-                    ),
-                    "Me Entregaron": st.column_config.CheckboxColumn(
-                        "Me Entregaron",
-                        required=True,
-                        width="small"
-                    ),
-                    "Entregué": st.column_config.CheckboxColumn(
-                        "Entregué",
-                        required=True,
-                        width="small"
-                    ),
+                    "id": st.column_config.TextColumn("ID", disabled=True), # Muestra el ID de forma limpia y bloqueada para asegurar que no se pierda la referencia
+                    "Operación": st.column_config.SelectboxColumn("Operación", options=["VENDIDO", "COMPRADO"], required=True),
+                    "Monto (\()": st.column_config.NumberColumn("Monto (\))", format="$%.2f", min_value=0.0, required=True),
+                    "Vendedor": st.column_config.TextColumn("Vendedor", required=True),
+                    "Comprador": st.column_config.TextColumn("Comprador", required=True),
+                    "Me Entregaron": st.column_config.CheckboxColumn("Me Entregaron", required=True),
+                    "Entregué": st.column_config.CheckboxColumn("Entregué", required=True),
                 }
 
                 df_divisas_editado = st.data_editor(
@@ -968,52 +940,52 @@ else:
                     column_config=columnas_config_divisas,
                     use_container_width=True,
                     hide_index=True,
-                    key="editor_tabla_divisas"
+                    disabled=["id"],
+                    key="editor_tabla_divisas_fixed"
                 )
 
                 col_bt_1, col_bt_2 = st.columns([1, 4])
                 
                 with col_bt_1:
-                    if st.button("💾 Guardar Cambios", type="primary", key="btn_guardar_cambios_divisas"):
+                    if st.button("💾 Guardar Cambios", type="primary", key="btn_guardar_cambios_divisas_fixed"):
                         try:
-                            for index, row in df_divisas_editado.iterrows():
-                                if index in mapa_ids:
-                                    reg_id = mapa_ids[index]
-                                    op_val = row["Operación"]
-                                    monto_val = row["Monto ($)"]
-                                    vendedor_val = row["Vendedor"]
-                                    comprador_val = row["Comprador"]
-                                    me_entregaron_val = row["Me Entregaron"]
-                                    entregue_val = row["Entregué"]
+                            for _, row in df_divisas_editado.iterrows():
+                                reg_id = row["id"]
+                                op_val = row["Operación"]
+                                monto_val = row["Monto ($)"]
+                                vendedor_val = row["Vendedor"]
+                                comprador_val = row["Comprador"]
+                                me_entregaron_val = row["Me Entregaron"]
+                                entregue_val = row["Entregué"]
 
-                                    # Si ambas casillas están marcadas, se elimina el registro
-                                    if me_entregaron_val and entregue_val:
-                                        supabase.table("divisas").delete().eq("id", reg_id).execute()
-                                    else:
-                                        supabase.table("divisas").update({
-                                            "operacion": op_val,
-                                            "monto": monto_val,
-                                            "vendedor": vendedor_val,
-                                            "comprador": comprador_val,
-                                            "me_entregaron": me_entregaron_val,
-                                            "entregue": entregue_val
-                                        }).eq("id", reg_id).execute()
+                                if me_entregaron_val and entregue_val:
+                                    # Intentar borrar y capturar respuesta
+                                    res_del = supabase.table("divisas").delete().eq("id", reg_id).execute()
+                                    print("Resultado delete:", res_del) # Para depuración en consola si es necesario
+                                else:
+                                    supabase.table("divisas").update({
+                                        "operacion": op_val,
+                                        "monto": monto_val,
+                                        "vendedor": vendedor_val,
+                                        "comprador": comprador_val,
+                                        "me_entregaron": me_entregaron_val,
+                                        "entregue": entregue_val
+                                    }).eq("id", reg_id).execute()
 
-                            st.success("¡Cambios actualizados correctamente!")
+                            st.success("¡Cambios guardados correctamente!")
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Error al actualizar los cambios: {e}")
+                            st.error(f"Error detallado al actualizar/borrar en Supabase: {e}")
                         
                 with col_bt_2:
-                    if st.button("🗑️ Limpiar Todo el Historial", key="btn_limpiar_divisas"):
+                    if st.button("🗑️ Limpiar Todo el Historial", key="btn_limpiar_divisas_fixed"):
                         try:
-                            # Se ejecuta el borrado filtrando estrictamente por el usuario actual
-                            supabase.table("divisas").delete().eq("user_id", usuario_actual.id).execute()
+                            res_all = supabase.table("divisas").delete().eq("user_id", usuario_actual.id).execute()
                             st.success("¡Historial borrado por completo!")
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Error al limpiar el historial: {e}")
+                            st.error(f"Error detallado al limpiar historial: {e}")
             else:
                 st.info("No hay operaciones de compra/venta registradas todavía.")
         except Exception as e:
-            st.error(f"Error al cargar las operaciones de divisas: {e}")
+            st.error(f"Error al cargar las operaciones: {e}")
