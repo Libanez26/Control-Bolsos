@@ -853,7 +853,7 @@ else:
                 else:
                     st.warning("Verifica el correo y que tengas bolsos creados.")
 
-    # PESTAÑA 5: Compra/Venta Dólares (Actualizada con borrado y autoeleminación)
+    # PESTAÑA 5: Compra/Venta Dólares (Corregida)
     with tab_divisas:
         st.subheader("💱 Control de Compra y Venta de Dólares")
         st.write("Registra las operaciones indicando quién vende, quién compra, los montos y los estados de entrega.")
@@ -914,7 +914,7 @@ else:
                 lista_para_df = []
                 for r in registros_db:
                     lista_para_df.append({
-                        "id": r["id"],
+                        "id_oculto": r["id"],
                         "Operación": r["operacion"],
                         "Monto ($)": float(r["monto"]),
                         "Vendedor": r["vendedor"],
@@ -924,9 +924,9 @@ else:
                     })
 
                 df_divisas = pd.DataFrame(lista_para_df)
-                df_mostrar = df_divisas.drop(columns=["id"])
 
                 columnas_config_divisas = {
+                    "id_oculto": st.column_config.TextColumn("ID", disabled=True),
                     "Operación": st.column_config.SelectboxColumn(
                         "Operación",
                         options=["VENDIDO", "COMPRADO"],
@@ -963,10 +963,11 @@ else:
                 }
 
                 df_divisas_editado = st.data_editor(
-                    df_mostrar,
+                    df_divisas,
                     column_config=columnas_config_divisas,
                     use_container_width=True,
                     hide_index=True,
+                    disabled=["id_oculto"],
                     key="editor_tabla_divisas"
                 )
 
@@ -975,21 +976,24 @@ else:
                 with col_bt_1:
                     if st.button("💾 Guardar Cambios", type="primary", key="btn_guardar_cambios_divisas"):
                         try:
-                            for idx, row in df_editado.iterrows():
-                                reg_id = df_divisas.iloc[idx]["id"]
+                            for index, row in df_divisas_editado.iterrows():
+                                reg_id = row["id_oculto"]
+                                op_val = row["Operación"]
+                                monto_val = row["Monto ($)"]
+                                vendedor_val = row["Vendedor"]
+                                comprador_val = row["Comprador"]
                                 me_entregaron_val = row["Me Entregaron"]
                                 entregue_val = row["Entregué"]
 
-                                # Si ambas casillas están marcadas, borramos el registro automáticamente
+                                # Si ambas casillas están marcadas, se elimina el registro en base al ID exacto
                                 if me_entregaron_val and entregue_val:
                                     supabase.table("divisas").delete().eq("id", reg_id).execute()
                                 else:
-                                    # De lo contrario, actualizamos normalmente
                                     supabase.table("divisas").update({
-                                        "operacion": row["Operación"],
-                                        "monto": row["Monto ($)"],
-                                        "vendedor": row["Vendedor"],
-                                        "comprador": row["Comprador"],
+                                        "operacion": op_val,
+                                        "monto": monto_val,
+                                        "vendedor": vendedor_val,
+                                        "comprador": comprador_val,
                                         "me_entregaron": me_entregaron_val,
                                         "entregue": entregue_val
                                     }).eq("id", reg_id).execute()
