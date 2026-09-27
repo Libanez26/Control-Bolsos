@@ -856,7 +856,7 @@ else:
     # PESTAÑA 5: Compra/Venta Dólares
     with tab_divisas:
         st.subheader("💱 Control de Compra y Venta de Dólares")
-        st.write("Registra las operaciones indicando quién vende, quién compra, los montos y los estados de entrega.")
+        st.write("Registra las operaciones y contrólalas mediante los botones individuales de cada fila.")
         
         with st.form("form_nueva_divisa", clear_on_submit=True):
             st.markdown("### ➕ Registrar Nueva Operación")
@@ -869,9 +869,9 @@ else:
             
             col_n1, col_n2 = st.columns(2)
             with col_n1:
-                nombre_vendedor = st.text_input("Nombre del Vendedor", placeholder="Ej. Name", key="nuevo_vendedor_op")
+                nombre_vendedor = st.text_input("Nombre del Vendedor", placeholder="Ej. Juan", key="nuevo_vendedor_op")
             with col_n2:
-                nombre_comprador = st.text_input("Nombre del Comprador", placeholder="Ej. Name", key="nuevo_comprador_op")
+                nombre_comprador = st.text_input("Nombre del Comprador", placeholder="Ej. Pedro", key="nuevo_comprador_op")
             
             st.markdown("---")
             st.markdown("📦 **Estado de Entrega inicial:**")
@@ -905,88 +905,72 @@ else:
 
         st.markdown("---")
         st.subheader("📋 Listado y Control de Operaciones")
-        st.write("Puedes editar los campos o marcar las casillas. Si marcas ambas casillas y guardas, la operación se eliminará.")
 
         try:
             resp_divisas = supabase.table("divisas").select("*").eq("user_id", usuario_actual.id).order("created_at", desc=False).execute()
             registros_db = resp_divisas.data if resp_divisas.data else []
 
             if registros_db:
-                # Creamos una lista separada con los IDs ordenados exactamente igual que las filas
-                ids_mapping = [r["id"] for r in registros_db]
-                
-                lista_para_df = []
+                # Botón general para limpiar todo
+                if st.button("🗑️ Limpiar Todo el Historial", key="btn_limpiar_todo_divisas_fixed"):
+                    try:
+                        supabase.table("divisas").delete().eq("user_id", usuario_actual.id).execute()
+                        st.success("¡Historial borrado por completo!")
+                        st.rerun()
+                    except Exception as e:
+                        st.error(f"Error al limpiar historial: {e}")
+
+                st.markdown("---")
+
+                # Mostrar cada registro en una tarjeta limpia con sus botones operativos reales
                 for r in registros_db:
-                    lista_para_df.append({
-                        "Operación": r["operacion"],
-                        "Monto ($)": float(r["monto"]),
-                        "Vendedor": r["vendedor"],
-                        "Comprador": r["comprador"],
-                        "Me Entregaron": r["me_entregaron"],
-                        "Entregué": r["entregue"]
-                    })
+                    reg_id = r["id"]
+                    op = r["operacion"]
+                    monto = r["monto"]
+                    vendedor = r["vendedor"]
+                    comprador = r["comprador"]
+                    me_ent = r["me_entregaron"]
+                    ent = r["entregue"]
 
-                df_divisas = pd.DataFrame(lista_para_df)
-
-                columnas_config_divisas = {
-                    "Operación": st.column_config.SelectboxColumn("Operación", options=["VENDIDO", "COMPRADO"], required=True),
-                    "Monto (\()": st.column_config.NumberColumn("Monto (\))", format="$%.2f", min_value=0.0, required=True),
-                    "Vendedor": st.column_config.TextColumn("Vendedor", required=True),
-                    "Comprador": st.column_config.TextColumn("Comprador", required=True),
-                    "Me Entregaron": st.column_config.CheckboxColumn("Me Entregaron", required=True),
-                    "Entregué": st.column_config.CheckboxColumn("Entregué", required=True),
-                }
-
-                df_divisas_editado = st.data_editor(
-                    df_divisas,
-                    column_config=columnas_config_divisas,
-                    use_container_width=True,
-                    hide_index=True,
-                    num_rows="fixed",
-                    key="editor_tabla_divisas_sin_id"
-                )
-
-                col_bt_1, col_bt_2 = st.columns([1, 4])
-                
-                with col_bt_1:
-                    if st.button("💾 Guardar Cambios", type="primary", key="btn_guardar_cambios_divisas_sin_id"):
-                        try:
-                            for index, row in df_divisas_editado.iterrows():
-                                # Obtenemos el ID real usando el índice de la fila
-                                reg_id = ids_mapping[index]
-                                
-                                op_val = row["Operación"]
-                                monto_val = row["Monto ($)"]
-                                vendedor_val = row["Vendedor"]
-                                comprador_val = row["Comprador"]
-                                me_entregaron_val = row["Me Entregaron"]
-                                entregue_val = row["Entregué"]
-
-                                if me_entregaron_val and entregue_val:
-                                    supabase.table("divisas").delete().eq("id", reg_id).execute()
-                                else:
-                                    supabase.table("divisas").update({
-                                        "operacion": op_val,
-                                        "monto": monto_val,
-                                        "vendedor": vendedor_val,
-                                        "comprador": comprador_val,
-                                        "me_entregaron": me_entregaron_val,
-                                        "entregue": entregue_val
-                                    }).eq("id", reg_id).execute()
-
-                            st.success("¡Cambios guardados correctamente!")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error al procesar los cambios en la base de datos: {e}")
+                    with st.container(border=True):
+                        col_info, col_btn1, col_btn2 = st.columns([3, 1, 1])
                         
-                with col_bt_2:
-                    if st.button("🗑️ Limpiar Todo el Historial", key="btn_limpiar_divisas_sin_id"):
-                        try:
-                            supabase.table("divisas").delete().eq("user_id", usuario_actual.id).execute()
-                            st.success("¡Historial borrado por completo!")
-                            st.rerun()
-                        except Exception as e:
-                            st.error(f"Error al limpiar historial: {e}")
+                        with col_info:
+                            st.markdown(f"**{op}** — **${monto:,.2f}**")
+                            st.caption(f"👤 Vendedor: `{vendedor}` | 🛒 Comprador: `{comprador}`")
+                            
+                            # Checkboxes interactivos independientes por registro
+                            nuevo_me_ent = st.checkbox("Me entregaron", value=me_ent, key=f"me_ent_{reg_id}")
+                            nuevo_ent = st.checkbox("Ya entregué", value=ent, key=f"ent_{reg_id}")
+
+                        with col_btn1:
+                            st.write("") # Espaciador visual
+                            if st.button("💾 Actualizar", key=f"act_{reg_id}", type="primary"):
+                                try:
+                                    supabase.table("divisas").update({
+                                        "me_entregaron": nuevo_me_ent,
+                                        "entregue": nuevo_ent
+                                    }).eq("id", reg_id).execute()
+                                    
+                                    # Si al actualizar marca ambas, lo borramos automáticamente
+                                    if nuevo_me_ent and nuevo_ent:
+                                        supabase.table("divisas").delete().eq("id", reg_id).execute()
+                                        st.success("¡Operación completada y eliminada!")
+                                    else:
+                                        st.success("¡Actualizado!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error: {e}")
+
+                        with col_btn2:
+                            st.write("") # Espaciador visual
+                            if st.button("❌ Borrar", key=f"del_{reg_id}"):
+                                try:
+                                    supabase.table("divisas").delete().eq("id", reg_id).execute()
+                                    st.success("¡Operación eliminada!")
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Error al borrar: {e}")
             else:
                 st.info("No hay operaciones de compra/venta registradas todavía.")
         except Exception as e:
