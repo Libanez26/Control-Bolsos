@@ -853,7 +853,7 @@ else:
                 else:
                     st.warning("Verifica el correo y que tengas bolsos creados.")
 
-    # PESTAÑA 5: Compra/Venta Dólares (Corregida)
+    # PESTAÑA 5: Compra/Venta Dólares (Sin columna de ID y con borrado corregido)
     with tab_divisas:
         st.subheader("💱 Control de Compra y Venta de Dólares")
         st.write("Registra las operaciones indicando quién vende, quién compra, los montos y los estados de entrega.")
@@ -912,9 +912,11 @@ else:
 
             if registros_db:
                 lista_para_df = []
-                for r in registros_db:
+                mapa_ids = {} # Diccionario para relacionar la fila visual con el ID real de Supabase
+
+                for idx, r in enumerate(registros_db):
+                    mapa_ids[idx] = r["id"]
                     lista_para_df.append({
-                        "id_oculto": r["id"],
                         "Operación": r["operacion"],
                         "Monto ($)": float(r["monto"]),
                         "Vendedor": r["vendedor"],
@@ -926,7 +928,6 @@ else:
                 df_divisas = pd.DataFrame(lista_para_df)
 
                 columnas_config_divisas = {
-                    "id_oculto": st.column_config.TextColumn("ID", disabled=True),
                     "Operación": st.column_config.SelectboxColumn(
                         "Operación",
                         options=["VENDIDO", "COMPRADO"],
@@ -967,7 +968,6 @@ else:
                     column_config=columnas_config_divisas,
                     use_container_width=True,
                     hide_index=True,
-                    disabled=["id_oculto"],
                     key="editor_tabla_divisas"
                 )
 
@@ -977,28 +977,29 @@ else:
                     if st.button("💾 Guardar Cambios", type="primary", key="btn_guardar_cambios_divisas"):
                         try:
                             for index, row in df_divisas_editado.iterrows():
-                                reg_id = row["id_oculto"]
-                                op_val = row["Operación"]
-                                monto_val = row["Monto ($)"]
-                                vendedor_val = row["Vendedor"]
-                                comprador_val = row["Comprador"]
-                                me_entregaron_val = row["Me Entregaron"]
-                                entregue_val = row["Entregué"]
+                                if index in mapa_ids:
+                                    reg_id = mapa_ids[index]
+                                    op_val = row["Operación"]
+                                    monto_val = row["Monto ($)"]
+                                    vendedor_val = row["Vendedor"]
+                                    comprador_val = row["Comprador"]
+                                    me_entregaron_val = row["Me Entregaron"]
+                                    entregue_val = row["Entregué"]
 
-                                # Si ambas casillas están marcadas, se elimina el registro en base al ID exacto
-                                if me_entregaron_val and entregue_val:
-                                    supabase.table("divisas").delete().eq("id", reg_id).execute()
-                                else:
-                                    supabase.table("divisas").update({
-                                        "operacion": op_val,
-                                        "monto": monto_val,
-                                        "vendedor": vendedor_val,
-                                        "comprador": comprador_val,
-                                        "me_entregaron": me_entregaron_val,
-                                        "entregue": entregue_val
-                                    }).eq("id", reg_id).execute()
+                                    # Si ambas casillas están marcadas, se elimina el registro
+                                    if me_entregaron_val and entregue_val:
+                                        supabase.table("divisas").delete().eq("id", reg_id).execute()
+                                    else:
+                                        supabase.table("divisas").update({
+                                            "operacion": op_val,
+                                            "monto": monto_val,
+                                            "vendedor": vendedor_val,
+                                            "comprador": comprador_val,
+                                            "me_entregaron": me_entregaron_val,
+                                            "entregue": entregue_val
+                                        }).eq("id", reg_id).execute()
 
-                            st.success("¡Cambios actualizados y filas completadas eliminadas correctamente!")
+                            st.success("¡Cambios actualizados correctamente!")
                             st.rerun()
                         except Exception as e:
                             st.error(f"Error al actualizar los cambios: {e}")
@@ -1006,6 +1007,7 @@ else:
                 with col_bt_2:
                     if st.button("🗑️ Limpiar Todo el Historial", key="btn_limpiar_divisas"):
                         try:
+                            # Se ejecuta el borrado filtrando estrictamente por el usuario actual
                             supabase.table("divisas").delete().eq("user_id", usuario_actual.id).execute()
                             st.success("¡Historial borrado por completo!")
                             st.rerun()
