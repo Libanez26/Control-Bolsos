@@ -937,24 +937,23 @@ else:
                         
                         with col_info:
                             st.markdown(f"**{op}** — **${monto:,.2f}**")
-                            st.caption(f"👤 Vendedor: `{vendedor}` | 🛒 Comprador: `{comprador}`")
+                            st.caption(f"👤 Vendedor: `{vendedor}` | 🛒 Comprador: `{comprador}` (ID: `{reg_id}`)")
                             
-                            # Checkboxes interactivos independientes por registro
+                            # Checkboxes independientes por registro
                             nuevo_me_ent = st.checkbox("Me entregaron", value=me_ent, key=f"me_ent_{reg_id}")
                             nuevo_ent = st.checkbox("Ya entregué", value=ent, key=f"ent_{reg_id}")
 
                         with col_btn1:
-                            st.write("") # Espaciador visual
+                            st.write("") 
                             if st.button("💾 Actualizar", key=f"act_{reg_id}", type="primary"):
                                 try:
                                     supabase.table("divisas").update({
                                         "me_entregaron": nuevo_me_ent,
                                         "entregue": nuevo_ent
-                                    }).eq("id", reg_id).execute()
+                                    }).eq("id", str(reg_id)).execute()
                                     
-                                    # Si al actualizar marca ambas, lo borramos automáticamente
                                     if nuevo_me_ent and nuevo_ent:
-                                        supabase.table("divisas").delete().eq("id", reg_id).execute()
+                                        supabase.table("divisas").delete().eq("id", str(reg_id)).execute()
                                         st.success("¡Operación completada y eliminada!")
                                     else:
                                         st.success("¡Actualizado!")
@@ -963,15 +962,19 @@ else:
                                     st.error(f"Error: {e}")
 
                         with col_btn2:
-                            st.write("") # Espaciador visual
+                            st.write("") 
                             if st.button("❌ Borrar", key=f"del_{reg_id}"):
                                 try:
-                                    supabase.table("divisas").delete().eq("id", reg_id).execute()
-                                    st.success("¡Operación eliminada!")
-                                    st.rerun()
+                                    # Forzamos el ID a texto y capturamos la respuesta completa de Supabase
+                                    res = supabase.table("divisas").delete().eq("id", str(reg_id)).execute()
+                                    
+                                    # Esto te mostrará en pantalla qué respondió Supabase exactamente
+                                    st.write("Respuesta de Supabase al borrar:", res)
+                                    
+                                    if hasattr(res, 'data') and res.data:
+                                        st.success("¡Operación eliminada!")
+                                        st.rerun()
+                                    else:
+                                        st.warning("Supabase no borró ningún registro. Revisa las políticas RLS en tu panel de Supabase.")
                                 except Exception as e:
                                     st.error(f"Error al borrar: {e}")
-            else:
-                st.info("No hay operaciones de compra/venta registradas todavía.")
-        except Exception as e:
-            st.error(f"Error al cargar las operaciones: {e}")
