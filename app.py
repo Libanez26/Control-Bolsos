@@ -886,7 +886,7 @@ else:
             if btn_guardar_divisa:
                 if nombre_vendedor.strip() and nombre_comprador.strip():
                     try:
-                        res = supabase.table("divisas").insert({
+                        supabase.table("divisas").insert({
                             "user_id": usuario_actual.id,
                             "operacion": tipo_operacion,
                             "monto": monto_divisa,
@@ -912,10 +912,12 @@ else:
             registros_db = resp_divisas.data if resp_divisas.data else []
 
             if registros_db:
+                # Creamos una lista separada con los IDs ordenados exactamente igual que las filas
+                ids_mapping = [r["id"] for r in registros_db]
+                
                 lista_para_df = []
                 for r in registros_db:
                     lista_para_df.append({
-                        "id": str(r["id"]),
                         "Operación": r["operacion"],
                         "Monto ($)": float(r["monto"]),
                         "Vendedor": r["vendedor"],
@@ -925,9 +927,6 @@ else:
                     })
 
                 df_divisas = pd.DataFrame(lista_para_df)
-
-                # Definimos las columnas visibles (excluyendo "id" de la interfaz gráfica)
-                columnas_visibles = ["Operación", "Monto ($)", "Vendedor", "Comprador", "Me Entregaron", "Entregué"]
 
                 columnas_config_divisas = {
                     "Operación": st.column_config.SelectboxColumn("Operación", options=["VENDIDO", "COMPRADO"], required=True),
@@ -941,20 +940,21 @@ else:
                 df_divisas_editado = st.data_editor(
                     df_divisas,
                     column_config=columnas_config_divisas,
-                    column_order=columnas_visibles, # <-- Esto oculta la columna ID visualmente pero la conserva internamente
                     use_container_width=True,
                     hide_index=True,
-                    key="editor_tabla_divisas_fixed"
+                    num_rows="fixed",
+                    key="editor_tabla_divisas_sin_id"
                 )
 
                 col_bt_1, col_bt_2 = st.columns([1, 4])
                 
                 with col_bt_1:
-                    if st.button("💾 Guardar Cambios", type="primary", key="btn_guardar_cambios_divisas_fixed"):
+                    if st.button("💾 Guardar Cambios", type="primary", key="btn_guardar_cambios_divisas_sin_id"):
                         try:
-                            hubo_error = False
-                            for _, row in df_divisas_editado.iterrows():
-                                reg_id = row["id"]
+                            for index, row in df_divisas_editado.iterrows():
+                                # Obtenemos el ID real usando el índice de la fila
+                                reg_id = ids_mapping[index]
+                                
                                 op_val = row["Operación"]
                                 monto_val = row["Monto ($)"]
                                 vendedor_val = row["Vendedor"]
@@ -977,16 +977,16 @@ else:
                             st.success("¡Cambios guardados correctamente!")
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Excepción general al guardar cambios: {e}")
+                            st.error(f"Error al procesar los cambios en la base de datos: {e}")
                         
                 with col_bt_2:
-                    if st.button("🗑️ Limpiar Todo el Historial", key="btn_limpiar_divisas_fixed"):
+                    if st.button("🗑️ Limpiar Todo el Historial", key="btn_limpiar_divisas_sin_id"):
                         try:
                             supabase.table("divisas").delete().eq("user_id", usuario_actual.id).execute()
                             st.success("¡Historial borrado por completo!")
                             st.rerun()
                         except Exception as e:
-                            st.error(f"Excepción al limpiar historial: {e}")
+                            st.error(f"Error al limpiar historial: {e}")
             else:
                 st.info("No hay operaciones de compra/venta registradas todavía.")
         except Exception as e:
