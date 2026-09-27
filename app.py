@@ -911,7 +911,6 @@ else:
             registros_db = resp_divisas.data if resp_divisas.data else []
 
             if registros_db:
-                # Botón general para limpiar todo
                 if st.button("🗑️ Limpiar Todo el Historial", key="btn_limpiar_todo_divisas_fixed"):
                     try:
                         supabase.table("divisas").delete().eq("user_id", usuario_actual.id).execute()
@@ -922,7 +921,6 @@ else:
 
                 st.markdown("---")
 
-                # Mostrar cada registro en una tarjeta limpia con sus botones operativos reales
                 for r in registros_db:
                     reg_id = r["id"]
                     op = r["operacion"]
@@ -939,7 +937,6 @@ else:
                             st.markdown(f"**{op}** — **${monto:,.2f}**")
                             st.caption(f"👤 Vendedor: `{vendedor}` | 🛒 Comprador: `{comprador}` (ID: `{reg_id}`)")
                             
-                            # Checkboxes independientes por registro
                             nuevo_me_ent = st.checkbox("Me entregaron", value=me_ent, key=f"me_ent_{reg_id}")
                             nuevo_ent = st.checkbox("Ya entregué", value=ent, key=f"ent_{reg_id}")
 
@@ -965,10 +962,7 @@ else:
                             st.write("") 
                             if st.button("❌ Borrar", key=f"del_{reg_id}"):
                                 try:
-                                    # Forzamos el ID a texto y capturamos la respuesta completa de Supabase
                                     res = supabase.table("divisas").delete().eq("id", str(reg_id)).execute()
-                                    
-                                    # Esto te mostrará en pantalla qué respondió Supabase exactamente
                                     st.write("Respuesta de Supabase al borrar:", res)
                                     
                                     if hasattr(res, 'data') and res.data:
@@ -978,3 +972,7 @@ else:
                                         st.warning("Supabase no borró ningún registro. Revisa las políticas RLS en tu panel de Supabase.")
                                 except Exception as e:
                                     st.error(f"Error al borrar: {e}")
+            else:
+                st.info("No hay operaciones de compra/venta registradas todavía.")
+        except Exception as e:
+            st.error(f"Error al cargar las operaciones: {e}")
