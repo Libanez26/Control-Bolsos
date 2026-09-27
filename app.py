@@ -853,7 +853,7 @@ else:
                 else:
                     st.warning("Verifica el correo y que tengas bolsos creados.")
 
-    # PESTAÑA 5: Compra/Venta Dólares (Solución Definitiva)
+    # PESTAÑA 5: Compra/Venta Dólares (Con validación de errores de Supabase)
     with tab_divisas:
         st.subheader("💱 Control de Compra y Venta de Dólares")
         st.write("Registra las operaciones indicando quién vende, quién compra, los montos y los estados de entrega.")
@@ -886,7 +886,7 @@ else:
             if btn_guardar_divisa:
                 if nombre_vendedor.strip() and nombre_comprador.strip():
                     try:
-                        supabase.table("divisas").insert({
+                        res = supabase.table("divisas").insert({
                             "user_id": usuario_actual.id,
                             "operacion": tipo_operacion,
                             "monto": monto_divisa,
@@ -895,10 +895,14 @@ else:
                             "me_entregaron": chk_me_entregaron,
                             "entregue": chk_entregue
                         }).execute()
-                        st.success("¡Operación registrada con éxito!")
-                        st.rerun()
+                        
+                        if hasattr(res, 'error') and res.error:
+                            st.error(f"Error de Supabase al insertar: {res.error}")
+                        else:
+                            st.success("¡Operación registrada con éxito!")
+                            st.rerun()
                     except Exception as e:
-                        st.error(f"Error al guardar: {e}")
+                        st.error(f"Excepción al guardar: {e}")
                 else:
                     st.warning("Por favor ingresa el nombre del vendedor y del comprador.")
 
@@ -914,7 +918,7 @@ else:
                 lista_para_df = []
                 for r in registros_db:
                     lista_para_df.append({
-                        "id": str(r["id"]), # Convertimos el ID explícitamente a texto para evitar problemas de tipos
+                        "id": str(r["id"]),
                         "Operación": r["operacion"],
                         "Monto ($)": float(r["monto"]),
                         "Vendedor": r["vendedor"],
@@ -926,7 +930,7 @@ else:
                 df_divisas = pd.DataFrame(lista_para_df)
 
                 columnas_config_divisas = {
-                    "id": st.column_config.TextColumn("ID", disabled=True), # Muestra el ID de forma limpia y bloqueada para asegurar que no se pierda la referencia
+                    "id": st.column_config.TextColumn("ID", disabled=True),
                     "Operación": st.column_config.SelectboxColumn("Operación", options=["VENDIDO", "COMPRADO"], required=True),
                     "Monto (\()": st.column_config.NumberColumn("Monto (\))", format="$%.2f", min_value=0.0, required=True),
                     "Vendedor": st.column_config.TextColumn("Vendedor", required=True),
@@ -949,6 +953,7 @@ else:
                 with col_bt_1:
                     if st.button("💾 Guardar Cambios", type="primary", key="btn_guardar_cambios_divisas_fixed"):
                         try:
+                            hubo_error = False
                             for _, row in df_divisas_editado.iterrows():
                                 reg_id = row["id"]
                                 op_val = row["Operación"]
@@ -959,11 +964,12 @@ else:
                                 entregue_val = row["Entregué"]
 
                                 if me_entregaron_val and entregue_val:
-                                    # Intentar borrar y capturar respuesta
                                     res_del = supabase.table("divisas").delete().eq("id", reg_id).execute()
-                                    print("Resultado delete:", res_del) # Para depuración en consola si es necesario
+                                    if hasattr(res_del, 'error') and res_del.error:
+                                        st.error(f"Error al eliminar ID {reg_id}: {res_del.error}")
+                                        hubo_error = True
                                 else:
-                                    supabase.table("divisas").update({
+                                    res_upd = supabase.table("divisas").update({
                                         "operacion": op_val,
                                         "monto": monto_val,
                                         "vendedor": vendedor_val,
@@ -971,20 +977,27 @@ else:
                                         "me_entregaron": me_entregaron_val,
                                         "entregue": entregue_val
                                     }).eq("id", reg_id).execute()
+                                    if hasattr(res_upd, 'error') and res_upd.error:
+                                        st.error(f"Error al actualizar ID {reg_id}: {res_upd.error}")
+                                        hubo_error = True
 
-                            st.success("¡Cambios guardados correctamente!")
-                            st.rerun()
+                            if not hubo_error:
+                                st.success("¡Cambios guardados correctamente!")
+                                st.rerun()
                         except Exception as e:
-                            st.error(f"Error detallado al actualizar/borrar en Supabase: {e}")
+                            st.error(f"Excepción general al guardar cambios: {e}")
                         
                 with col_bt_2:
                     if st.button("🗑️ Limpiar Todo el Historial", key="btn_limpiar_divisas_fixed"):
                         try:
                             res_all = supabase.table("divisas").delete().eq("user_id", usuario_actual.id).execute()
-                            st.success("¡Historial borrado por completo!")
-                            st.rerun()
+                            if hasattr(res_all, 'error') and res_all.error:
+                                st.error(f"Error al limpiar historial en Supabase: {res_all.error}")
+                            else:
+                                st.success("¡Historial borrado por completo!")
+                                st.rerun()
                         except Exception as e:
-                            st.error(f"Error detallado al limpiar historial: {e}")
+                            st.error(f"Excepción al limpiar historial: {e}")
             else:
                 st.info("No hay operaciones de compra/venta registradas todavía.")
         except Exception as e:
